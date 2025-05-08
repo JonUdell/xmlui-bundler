@@ -13,6 +13,9 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"syscall"
+
+	"golang.org/x/term"
 )
 
 const (
@@ -34,6 +37,30 @@ func promptForInstallPath(defaultPath string) string {
 		}
 	}
 	return defaultPath
+}
+
+func askUserForFolder(defaultPath string) string {
+	if term.IsTerminal(int(syscall.Stdin)) {
+		return promptForInstallPath(defaultPath)
+	}
+
+	script := `tell application "System Events"
+	activate
+	set chosenFolder to choose folder with prompt "Choose install location for the app"
+	set posixPath to POSIX path of chosenFolder
+end tell
+return posixPath`
+
+	out, err := exec.Command("osascript", "-e", script).Output()
+	if err != nil {
+		fmt.Println("⚠️  Folder selection cancelled or failed.")
+		fmt.Println("→ Installing to default location:", defaultPath)
+		exec.Command("osascript", "-e",
+			fmt.Sprintf(`display dialog \"No folder selected.\nDefaulting to: %s\" buttons {\"OK\"} with title \"Install Location\"`, defaultPath)).Run()
+		return defaultPath
+	}
+
+	return strings.TrimSpace(string(out))
 }
 
 func downloadWithCurl(url string) ([]byte, error) {
@@ -84,7 +111,6 @@ func untarGzTo(data []byte, dest string) (string, error) {
 	tarReader := tar.NewReader(gzReader)
 
 	var lastBinaryPath string
-
 	for {
 		hdr, err := tarReader.Next()
 		if err == io.EOF {
@@ -136,41 +162,34 @@ func ensureExecutable(path string) error {
 	if _, err := os.Stat(path); os.IsNotExist(err) {
 		return fmt.Errorf("file not found: %s", path)
 	}
-
-	// Try Go chmod first
 	if err := os.Chmod(path, 0755); err != nil {
 		fmt.Printf("Go chmod failed for %s: %v\n", path, err)
 	} else {
 		fmt.Printf("Go chmod succeeded for %s\n", path)
 	}
-
-	// Fallback to shell chmod
 	if err := exec.Command("chmod", "+x", path).Run(); err != nil {
 		fmt.Printf("Shell chmod +x failed for %s: %v\n", path, err)
 	} else {
 		fmt.Printf("Shell chmod +x succeeded for %s\n", path)
 	}
-
-	// Print final mode
 	if fi, err := os.Stat(path); err == nil {
 		fmt.Printf("Final mode for %s: %v\n", path, fi.Mode())
 	}
 	return nil
 }
 
-
 func main() {
 	home, _ := os.UserHomeDir()
 	defaultDir := filepath.Join(home)
-	appDir := promptForInstallPath(defaultDir)
-	os.MkdirAll(appDir, 0755)
+	installDir := askUserForFolder(defaultDir)
+	os.MkdirAll(installDir, 0755)
 
 	appZip, err := downloadWithCurl(appZipURL)
 	if err != nil {
 		fmt.Println("Failed to download app zip:", err)
 		return
 	}
-	if err := unzipTo(appZip, appDir); err != nil {
+	if err := unzipTo(appZip, installDir); err != nil {
 		fmt.Println("Failed to unzip app:", err)
 		return
 	}
@@ -180,59 +199,54 @@ func main() {
 		fmt.Println("Failed to download server tar.gz:", err)
 		return
 	}
-	binPath, err := untarGzTo(serverTarGz, appDir)
+	binPath, err := untarGzTo(serverTarGz, installDir)
 	if err != nil {
 		fmt.Println("Failed to unpack server tar.gz:", err)
 		return
 	}
 
-	dirs, err := os.ReadDir(appDir)
+	dirs, err := os.ReadDir(installDir)
 	if err != nil {
-		fmt.Println("Failed to read app directory:", err)
+		fmt.Println("Failed to read install directory:", err)
 		return
 	}
 
-	var invoiceDir string
+	var appDir string
 	for _, d := range dirs {
-		if d.IsDir() && strings.HasPrefix(d.Name(), "xmlui-invoice") {
-			invoiceDir = filepath.Join(appDir, d.Name())
+		if d.IsDir() && strings.HasSuffix(d.Name(), "-main") {
+			appDir = filepath.Join(installDir, strings.TrimSuffix(d.Name(), "-main"))
+			err := os.Rename(filepath.Join(installDir, d.Name()), appDir)
+			if err != nil {
+				fmt.Println("Failed to rename extracted app folder:", err)
+				return
+			}
 			break
 		}
 	}
 
-	if invoiceDir == "" {
-		fmt.Println("Failed to locate extracted invoice app folder")
+	if appDir == "" {
+		fmt.Println("Failed to locate extracted app folder")
 		return
 	}
-
-	dstBinPath := filepath.Join(invoiceDir, filepath.Base(binPath))
+	dstBinPath := filepath.Join(appDir, filepath.Base(binPath))
 	if err := copyFile(binPath, dstBinPath); err != nil {
 		fmt.Println("Failed to copy server binary into app folder:", err)
 		return
 	}
 
-
-	script := filepath.Join(invoiceDir, "start-mac.sh")
+	script := filepath.Join(appDir, "start-mac.sh")
 	if err := ensureExecutable(script); err != nil {
 		fmt.Println("Failed to make start-mac.sh executable:", err)
 		return
 	}
 
-	absScript, err := filepath.Abs(script)
-	if err != nil {
-		fmt.Println("Failed to resolve absolute script path:", err)
-		return
-	}
-
-	cmd := exec.Command("/bin/bash", absScript)
-	cmd.Dir = invoiceDir
-	cmd.Env = os.Environ()
-	cmd.Stdout = os.Stdout
-	cmd.Stderr = os.Stderr
+	cmd := exec.Command("osascript", "-e",
+		fmt.Sprintf(`tell application "Terminal" to do script "cd \"%s\" && bash -i -c './start-mac.sh; echo; echo Server exited. Type exit to close this window.'"`, appDir),
+		"-e", `tell application "Terminal" to activate`)
 	if err := cmd.Run(); err != nil {
-		fmt.Println("Failed to launch start-mac.sh:", err)
+		fmt.Println("Failed to launch start-mac.sh in Terminal:", err)
 		return
 	}
 
-	fmt.Println("All done.")
+	fmt.Println("✅ App launched.")
 }
