@@ -4,6 +4,7 @@ package main
 import (
 	"archive/tar"
 	"archive/zip"
+	"bufio"
 	"bytes"
 	"compress/gzip"
 	"fmt"
@@ -17,8 +18,23 @@ import (
 const (
 	appZipURL      = "https://codeload.github.com/jonudell/xmlui-invoice/zip/refs/heads/main"
 	serverTarGzURL = "https://github.com/JonUdell/xmlui-test-server/releases/download/v1.0.0/xmlui-test-server-mac-arm.tar.gz"
-	localBaseDir   = "."
 )
+
+func promptForInstallPath(defaultPath string) string {
+	fmt.Printf("Install app to default location (%s)? [Y/n]: ", defaultPath)
+	scanner := bufio.NewScanner(os.Stdin)
+	scanner.Scan()
+	input := strings.TrimSpace(scanner.Text())
+	if strings.ToLower(input) == "n" {
+		fmt.Print("Enter custom install path: ")
+		scanner.Scan()
+		customPath := strings.TrimSpace(scanner.Text())
+		if customPath != "" {
+			return customPath
+		}
+	}
+	return defaultPath
+}
 
 func downloadWithCurl(url string) ([]byte, error) {
 	fmt.Println("Downloading with curl:", url)
@@ -116,8 +132,37 @@ func copyFile(src, dst string) error {
 	return os.Chmod(dst, 0755)
 }
 
+func ensureExecutable(path string) error {
+	if _, err := os.Stat(path); os.IsNotExist(err) {
+		return fmt.Errorf("file not found: %s", path)
+	}
+
+	// Try Go chmod first
+	if err := os.Chmod(path, 0755); err != nil {
+		fmt.Printf("Go chmod failed for %s: %v\n", path, err)
+	} else {
+		fmt.Printf("Go chmod succeeded for %s\n", path)
+	}
+
+	// Fallback to shell chmod
+	if err := exec.Command("chmod", "+x", path).Run(); err != nil {
+		fmt.Printf("Shell chmod +x failed for %s: %v\n", path, err)
+	} else {
+		fmt.Printf("Shell chmod +x succeeded for %s\n", path)
+	}
+
+	// Print final mode
+	if fi, err := os.Stat(path); err == nil {
+		fmt.Printf("Final mode for %s: %v\n", path, fi.Mode())
+	}
+	return nil
+}
+
+
 func main() {
-	appDir := localBaseDir
+	home, _ := os.UserHomeDir()
+	defaultDir := filepath.Join(home)
+	appDir := promptForInstallPath(defaultDir)
 	os.MkdirAll(appDir, 0755)
 
 	appZip, err := downloadWithCurl(appZipURL)
@@ -141,7 +186,6 @@ func main() {
 		return
 	}
 
-	// locate the app directory and run start-mac.sh
 	dirs, err := os.ReadDir(appDir)
 	if err != nil {
 		fmt.Println("Failed to read app directory:", err)
@@ -161,26 +205,17 @@ func main() {
 		return
 	}
 
-	// copy server binary into app folder
 	dstBinPath := filepath.Join(invoiceDir, filepath.Base(binPath))
 	if err := copyFile(binPath, dstBinPath); err != nil {
 		fmt.Println("Failed to copy server binary into app folder:", err)
 		return
 	}
 
-	script := filepath.Join(invoiceDir, "start-mac.sh")
-	if err := os.Chmod(script, 0755); err != nil {
-		fmt.Println("Failed to chmod start-mac.sh:", err)
-		return
-	}
 
-	fmt.Println("Attempting to run script:")
-	fmt.Println("  Path:", script)
-	info, err := os.Stat(script)
-	if err != nil {
-		fmt.Println("  Stat failed:", err)
-	} else {
-		fmt.Printf("  Exists: true\n  Mode: %v\n", info.Mode())
+	script := filepath.Join(invoiceDir, "start-mac.sh")
+	if err := ensureExecutable(script); err != nil {
+		fmt.Println("Failed to make start-mac.sh executable:", err)
+		return
 	}
 
 	absScript, err := filepath.Abs(script)
@@ -188,6 +223,7 @@ func main() {
 		fmt.Println("Failed to resolve absolute script path:", err)
 		return
 	}
+
 	cmd := exec.Command("/bin/bash", absScript)
 	cmd.Dir = invoiceDir
 	cmd.Env = os.Environ()
@@ -198,5 +234,5 @@ func main() {
 		return
 	}
 
-
+	fmt.Println("All done.")
 }
