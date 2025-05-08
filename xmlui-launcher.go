@@ -55,8 +55,9 @@ return posixPath`
 	if err != nil {
 		fmt.Println("⚠️  Folder selection cancelled or failed.")
 		fmt.Println("→ Installing to default location:", defaultPath)
-		exec.Command("osascript", "-e",
-			fmt.Sprintf(`display dialog \"No folder selected.\nDefaulting to: %s\" buttons {\"OK\"} with title \"Install Location\"`, defaultPath)).Run()
+
+		_ = exec.Command("osascript", "-e",
+		fmt.Sprintf(`display dialog "No folder was selected. The app will be installed to: %s" with title "Install Location Fallback" buttons {"OK"}`, escapeAppleScriptString(defaultPath))).Run()
 		return defaultPath
 	}
 
@@ -158,6 +159,10 @@ func copyFile(src, dst string) error {
 	return os.Chmod(dst, 0755)
 }
 
+func escapeAppleScriptString(s string) string {
+	return strings.ReplaceAll(s, "\"", `\"`)
+}
+
 func ensureExecutable(path string) error {
 	if _, err := os.Stat(path); os.IsNotExist(err) {
 		return fmt.Errorf("file not found: %s", path)
@@ -229,8 +234,8 @@ func main() {
 		return
 	}
 	dstBinPath := filepath.Join(appDir, filepath.Base(binPath))
-	if err := copyFile(binPath, dstBinPath); err != nil {
-		fmt.Println("Failed to copy server binary into app folder:", err)
+	if err := os.Rename(binPath, dstBinPath); err != nil {
+		fmt.Println("Failed to move server binary into app folder:", err)
 		return
 	}
 
