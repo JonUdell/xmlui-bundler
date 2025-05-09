@@ -19,7 +19,9 @@ import (
 )
 
 const (
-	appZipURL      = "https://codeload.github.com/jonudell/xmlui-invoice/zip/refs/heads/main"
+	repoName       = "xmlui-invoice"
+	branchName     = "main"
+	appZipURL      = "https://codeload.github.com/jonudell/" + repoName + "/zip/refs/heads/" + branchName
 	serverTarGzURL = "https://github.com/JonUdell/xmlui-test-server/releases/download/v1.0.0/xmlui-test-server-mac-arm.tar.gz"
 )
 
@@ -51,16 +53,7 @@ func askUserForFolder(defaultPath string) string {
 end tell
 return posixPath`
 
-	out, err := exec.Command("osascript", "-e", script).Output()
-	if err != nil {
-		fmt.Println("⚠️  Folder selection cancelled or failed.")
-		fmt.Println("→ Installing to default location:", defaultPath)
-
-		_ = exec.Command("osascript", "-e",
-		fmt.Sprintf(`display dialog "No folder was selected. The app will be installed to: %s" with title "Install Location Fallback" buttons {"OK"}`, escapeAppleScriptString(defaultPath))).Run()
-		return defaultPath
-	}
-
+	out, _ := exec.Command("osascript", "-e", script).Output()
 	return strings.TrimSpace(string(out))
 }
 
@@ -185,9 +178,12 @@ func ensureExecutable(path string) error {
 
 func main() {
 	home, _ := os.UserHomeDir()
-	defaultDir := filepath.Join(home)
+	defaultDir := filepath.Join(home, repoName)
 	installDir := askUserForFolder(defaultDir)
 	os.MkdirAll(installDir, 0755)
+
+	_ = exec.Command("osascript", "-e",
+	`display dialog "Downloading app files..." buttons {"OK"} giving up after 3`).Run()
 
 	appZip, err := downloadWithCurl(appZipURL)
 	if err != nil {
@@ -199,6 +195,9 @@ func main() {
 		return
 	}
 
+	_ = exec.Command("osascript", "-e",
+	`display dialog "Downloading test server..." buttons {"OK"} giving up after 5`).Run()
+	
 	serverTarGz, err := downloadWithCurl(serverTarGzURL)
 	if err != nil {
 		fmt.Println("Failed to download server tar.gz:", err)
@@ -219,11 +218,13 @@ func main() {
 	var appDir string
 	for _, d := range dirs {
 		if d.IsDir() && strings.HasSuffix(d.Name(), "-main") {
-			appDir = filepath.Join(installDir, strings.TrimSuffix(d.Name(), "-main"))
-			err := os.Rename(filepath.Join(installDir, d.Name()), appDir)
-			if err != nil {
-				fmt.Println("Failed to rename extracted app folder:", err)
-				return
+			src := filepath.Join(installDir, d.Name())
+			dst := filepath.Join(installDir, repoName)
+			if err := os.Rename(src, dst); err != nil {
+				fmt.Printf("Warning: could not rename %s to %s (maybe already exists): %v\n", src, dst, err)
+				appDir = src // fallback to unrenamed directory
+			} else {
+				appDir = dst
 			}
 			break
 		}
