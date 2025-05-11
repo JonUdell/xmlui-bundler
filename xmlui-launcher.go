@@ -2,9 +2,11 @@
 package main
 
 import (
+	"archive/tar"
 	"archive/zip"
 	"bufio"
 	"bytes"
+	"compress/gzip"
 	"fmt"
 	"io"
 	"os"
@@ -37,6 +39,24 @@ func getPlatformSpecificMCPURL() string {
 		return baseURL + "xmlui-mcp-windows.zip"
 	default:
 		return baseURL + "xmlui-mcp-mac-arm.zip"
+	}
+}
+
+func getPlatformSpecificServerURL() string {
+	baseURL := "https://github.com/JonUdell/xmlui-test-server/releases/download/v1.0.0/"
+	arch := runtime.GOARCH
+	switch runtime.GOOS {
+	case "darwin":
+		if arch == "arm64" {
+			return baseURL + "xmlui-test-server-mac-arm.tar.gz"
+		}
+		return baseURL + "xmlui-test-server-mac-amd.tar.gz"
+	case "linux":
+		return baseURL + "xmlui-test-server-linux-amd.tar.gz"
+	case "windows":
+		return baseURL + "xmlui-test-server-windows.zip"
+	default:
+		return baseURL + "xmlui-test-server-mac-arm.tar.gz"
 	}
 }
 
@@ -97,6 +117,40 @@ func unzipTo(data []byte, dest string) error {
 	return nil
 }
 
+func untarGzTo(data []byte, dest string) (string, error) {
+	gzReader, err := gzip.NewReader(bytes.NewReader(data))
+	if err != nil {
+		return "", err
+	}
+	tarReader := tar.NewReader(gzReader)
+	var lastBinaryPath string
+	for {
+		hdr, err := tarReader.Next()
+		if err == io.EOF {
+			break
+		}
+		if err != nil {
+			return "", err
+		}
+		fpath := filepath.Join(dest, hdr.Name)
+		if hdr.FileInfo().IsDir() {
+			os.MkdirAll(fpath, os.ModePerm)
+			continue
+		}
+		os.MkdirAll(filepath.Dir(fpath), os.ModePerm)
+		f, err := os.Create(fpath)
+		if err != nil {
+			return "", err
+		}
+		if _, err := io.Copy(f, tarReader); err != nil {
+			return "", err
+		}
+		f.Close()
+		lastBinaryPath = fpath
+	}
+	return lastBinaryPath, nil
+}
+
 func ensureExecutable(path string) error {
 	if err := os.Chmod(path, 0755); err != nil {
 		return err
@@ -107,12 +161,48 @@ func ensureExecutable(path string) error {
 	return nil
 }
 
+func moveIntoPlace(srcParent, repoName, installDir string) (string, error) {
+	repoPrefix := repoName + "-"
+	entries, err := os.ReadDir(srcParent)
+	if err != nil {
+		return "", err
+	}
+	for _, e := range entries {
+		if strings.HasPrefix(e.Name(), repoPrefix) {
+			tmp := filepath.Join(srcParent, e.Name())
+			final := filepath.Join(installDir, repoName)
+			if err := os.Rename(tmp, final); err != nil {
+				return "", err
+			}
+			return final, nil
+		}
+	}
+	return "", fmt.Errorf("repo dir not found")
+}
+
 func main() {
 	home, _ := os.UserHomeDir()
 	installDir := promptForInstallPath(filepath.Join(home, defaultDirName))
 	os.MkdirAll(installDir, 0755)
 
-	fmt.Println("Step 1/3: Downloading XMLUI components...")
+	fmt.Println("Step 1/4: Downloading XMLUI invoice app...")
+	appZip, err := downloadWithProgress(appZipURL, "XMLUI invoice app")
+	if err != nil {
+		fmt.Println("Failed to download app:", err)
+		os.Exit(1)
+	}
+	if err := unzipTo(appZip, installDir); err != nil {
+		fmt.Println("Failed to extract app:", err)
+		os.Exit(1)
+	}
+
+	appDir, err := moveIntoPlace(installDir, repoName, installDir)
+	if err != nil {
+		fmt.Println("Failed to organize app directory:", err)
+		os.Exit(1)
+	}
+
+	fmt.Println("Step 2/4: Downloading XMLUI components...")
 	components, err := downloadWithProgress(xmluiComponentsURL, "XMLUI components")
 	if err != nil {
 		fmt.Println("Failed to download components:", err)
@@ -124,24 +214,35 @@ func main() {
 	}
 	fmt.Println("✓ Extracted components")
 
-	// Move src
+	fmt.Println("Step 3/4: Downloading test server...")
+	serverURL := getPlatformSpecificServerURL()
+	serverArchive, err := downloadWithProgress(serverURL, "test server")
+	if err != nil {
+		fmt.Println("Failed to download test server:", err)
+		os.Exit(1)
+	}
+	var serverBin string
+	if strings.HasSuffix(serverURL, ".zip") {
+		if err := unzipTo(serverArchive, appDir); err != nil {
+			fmt.Println("Failed to extract test server:", err)
+			os.Exit(1)
+		}
+		serverBin = filepath.Join(appDir, "xmlui-test-server.exe")
+	} else {
+		serverBin, err = untarGzTo(serverArchive, appDir)
+		if err != nil {
+			fmt.Println("Failed to extract test server:", err)
+			os.Exit(1)
+		}
+	}
+	_ = ensureExecutable(serverBin)
+
+	fmt.Println("Step 4/4: Organizing files...")
 	srcFrom := filepath.Join(installDir, "xmlui", "src")
 	srcTo := filepath.Join(installDir, "src")
 	_ = os.Rename(srcFrom, srcTo)
 	_ = os.RemoveAll(filepath.Join(installDir, "xmlui"))
 
-	// Move xmlui-invoice to top level if needed
-	entries, _ := os.ReadDir(installDir)
-	for _, e := range entries {
-		if strings.HasPrefix(e.Name(), repoName+"-") {
-			tmp := filepath.Join(installDir, e.Name())
-			final := filepath.Join(installDir, repoName)
-			_ = os.Rename(tmp, final)
-			break
-		}
-	}
-
-	// Move MCP files into ./mcp
 	mcpDir := filepath.Join(installDir, "mcp")
 	os.MkdirAll(mcpDir, 0755)
 	for _, name := range []string{"xmlui-mcp", "xmlui-mcp-client", "run-mcp-client.sh"} {
@@ -153,14 +254,15 @@ func main() {
 		}
 	}
 
+	_ = ensureExecutable(filepath.Join(appDir, "start.sh"))
+
 	fmt.Println("✓ Organized layout complete")
 	fmt.Printf("\nInstall location: %s\n", installDir)
 
-	// Launch server
-	script := filepath.Join(installDir, repoName, "start.sh")
+	script := filepath.Join(appDir, "start.sh")
 	fmt.Println("Launching server:", script)
 	cmd := exec.Command(script)
-	cmd.Dir = filepath.Join(installDir, repoName)
+	cmd.Dir = appDir
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
 	cmd.Stdin = os.Stdin
