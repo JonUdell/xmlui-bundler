@@ -12,6 +12,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"syscall"
 
@@ -24,6 +25,27 @@ const (
 	appZipURL      = "https://codeload.github.com/jonudell/" + repoName + "/zip/refs/heads/" + branchName
 	serverTarGzURL = "https://github.com/JonUdell/xmlui-test-server/releases/download/v1.0.0/xmlui-test-server-mac-arm.tar.gz"
 )
+
+func getPlatformSpecificMCPURL() string {
+	baseURL := "https://github.com/jonudell/xmlui-mcp/releases/download/v1.0.0/"
+	
+	// Determine platform and architecture
+	arch := runtime.GOARCH
+	switch runtime.GOOS {
+	case "darwin":
+		if arch == "arm64" {
+			return baseURL + "xmlui-mcp-macos-arm64.zip"
+		} else {
+			return baseURL + "xmlui-mcp-macos-amd64.zip"
+		}
+	case "linux":
+		return baseURL + "xmlui-mcp-linux-amd64.zip"
+	case "windows":
+		return baseURL + "xmlui-mcp-windows-amd64.zip"
+	default:
+		return baseURL + "xmlui-mcp-macos-arm64.zip" // Default fallback
+	}
+}
 
 func promptForInstallPath(defaultPath string) string {
 	fmt.Printf("Install app to default location (%s)? [Y/n]: ", defaultPath)
@@ -206,6 +228,22 @@ func main() {
 	binPath, err := untarGzTo(serverTarGz, installDir)
 	if err != nil {
 		fmt.Println("Failed to unpack server tar.gz:", err)
+		return
+	}
+
+	// Download XMLUI MCP binary
+	_ = exec.Command("osascript", "-e",
+	`display dialog "Downloading XMLUI MCP binary..." buttons {"OK"} giving up after 5`).Run()
+	
+	mcpURL := getPlatformSpecificMCPURL()
+	fmt.Printf("Downloading MCP binary from: %s\n", mcpURL)
+	mcpZip, err := downloadWithCurl(mcpURL)
+	if err != nil {
+		fmt.Println("Failed to download XMLUI MCP binary:", err)
+		return
+	}
+	if err := unzipTo(mcpZip, installDir); err != nil {
+		fmt.Println("Failed to unzip XMLUI MCP binary:", err)
 		return
 	}
 
