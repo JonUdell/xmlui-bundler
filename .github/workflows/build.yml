@@ -70,7 +70,7 @@ jobs:
       uses: actions/checkout@v4
       with:
         repository: xmlui-com/xmlui
-        token: ${{ secrets.XMLUI_REPO_TOKEN }}
+        token: ${{ secrets.PAT_TOKEN }}
         path: xmlui-source
 
     - name: Package XMLUI components
