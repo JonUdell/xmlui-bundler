@@ -26,46 +26,52 @@ const (
 	xmluiComponentsURL = "https://github.com/jonudell/xmlui-launcher/releases/download/v1.0.0/xmlui-components.zip"
 )
 
+
+
 func getPlatformSpecificMCPURL() string {
 	baseURL := "https://github.com/jonudell/xmlui-mcp/releases/download/v1.0.0/"
-	
+
 	// Determine platform and architecture
 	arch := runtime.GOARCH
+
 	switch runtime.GOOS {
 	case "darwin":
 		if arch == "arm64" {
-			return baseURL + "xmlui-mcp-macos-arm64.zip"
+			return baseURL + "xmlui-mcp-mac-arm.zip"
 		} else {
-			return baseURL + "xmlui-mcp-macos-amd64.zip"
+			return baseURL + "xmlui-mcp-mac-amd.zip"
 		}
 	case "linux":
-		return baseURL + "xmlui-mcp-linux-amd64.zip"
+		return baseURL + "xmlui-mcp-linux-amd.zip"
 	case "windows":
-		return baseURL + "xmlui-mcp-windows-amd64.zip"
+		return baseURL + "xmlui-mcp-windows.zip"
 	default:
-		return baseURL + "xmlui-mcp-macos-arm64.zip" // Default fallback
+		return baseURL + "xmlui-mcp-mac-arm.zip"
 	}
+
 }
 
 func getPlatformSpecificServerURL() string {
 	baseURL := "https://github.com/JonUdell/xmlui-test-server/releases/download/v1.0.0/"
-	
+
 	// Determine platform and architecture
 	arch := runtime.GOARCH
+
 	switch runtime.GOOS {
 	case "darwin":
 		if arch == "arm64" {
 			return baseURL + "xmlui-test-server-mac-arm.tar.gz"
 		} else {
-			return baseURL + "xmlui-test-server-mac-intel.tar.gz"
+			return baseURL + "xmlui-test-server-mac-amd.tar.gz"
 		}
 	case "linux":
-		return baseURL + "xmlui-test-server-linux-amd64.tar.gz"
+		return baseURL + "xmlui-test-server-linux-amd.tar.gz"
 	case "windows":
-		return baseURL + "xmlui-test-server-windows-amd64.zip"
+		return baseURL + "xmlui-test-server-windows.zip"
 	default:
-		return baseURL + "xmlui-test-server-mac-arm.tar.gz" // Default fallback
+		return baseURL + "xmlui-test-server-mac-arm.tar.gz"
 	}
+
 }
 
 func promptForInstallPath(defaultPath string) string {
@@ -87,7 +93,7 @@ func promptForInstallPath(defaultPath string) string {
 func downloadWithProgress(url, filename string) ([]byte, error) {
 	fmt.Printf("Downloading %s...\n", filename)
 	fmt.Printf("  From: %s\n", url)
-	
+
 	cmd := exec.Command("curl", "-L", "-sS", "-#", url)
 	var out bytes.Buffer
 	cmd.Stdout = &out
@@ -95,7 +101,7 @@ func downloadWithProgress(url, filename string) ([]byte, error) {
 	if err := cmd.Run(); err != nil {
 		return nil, fmt.Errorf("curl failed: %w", err)
 	}
-	
+
 	fmt.Printf("  Downloaded: %d bytes\n", out.Len())
 	return out.Bytes(), nil
 }
@@ -105,7 +111,7 @@ func unzipTo(data []byte, dest string) error {
 	if err != nil {
 		return err
 	}
-	
+
 	fmt.Printf("  Extracting %d files...\n", len(r.File))
 	count := 0
 	for _, f := range r.File {
@@ -113,7 +119,7 @@ func unzipTo(data []byte, dest string) error {
 		if count%10 == 0 || count == len(r.File) {
 			fmt.Printf("  Progress: %d/%d files\n", count, len(r.File))
 		}
-		
+
 		fpath := filepath.Join(dest, f.Name)
 		if f.FileInfo().IsDir() {
 			os.MkdirAll(fpath, os.ModePerm)
@@ -146,7 +152,7 @@ func untarGzTo(data []byte, dest string) (string, error) {
 	var lastBinaryPath string
 	count := 0
 	fmt.Println("  Extracting .tar.gz...")
-	
+
 	for {
 		hdr, err := tarReader.Next()
 		if err == io.EOF {
@@ -155,12 +161,12 @@ func untarGzTo(data []byte, dest string) (string, error) {
 		if err != nil {
 			return "", err
 		}
-		
+
 		count++
 		if count%5 == 0 {
 			fmt.Printf("  Progress: %d files\n", count)
 		}
-		
+
 		fpath := filepath.Join(dest, hdr.Name)
 		if hdr.Typeflag == tar.TypeDir {
 			os.MkdirAll(fpath, os.ModePerm)
@@ -200,12 +206,12 @@ func ensureExecutable(path string) error {
 func main() {
 	fmt.Println("=== XMLUI Getting Started Installer ===")
 	fmt.Printf("Platform: %s/%s\n\n", runtime.GOOS, runtime.GOARCH)
-	
+
 	home, _ := os.UserHomeDir()
 	defaultDir := filepath.Join(home, defaultDirName)
 	installDir := promptForInstallPath(defaultDir)
 	os.MkdirAll(installDir, 0755)
-	
+
 	fmt.Printf("\nInstalling to: %s\n", installDir)
 	fmt.Println("\n----------------------------------------")
 
@@ -230,7 +236,7 @@ func main() {
 		fmt.Printf("Failed to download server: %v\n", err)
 		os.Exit(1)
 	}
-	
+
 	var binPath string
 	if strings.HasSuffix(serverURL, ".tar.gz") {
 		binPath, err = untarGzTo(serverData, installDir)
@@ -243,7 +249,7 @@ func main() {
 		// Find the executable
 		binPath = filepath.Join(installDir, "xmlui-test-server.exe")
 	}
-	
+
 	if err != nil {
 		fmt.Printf("Failed to extract server: %v\n", err)
 		os.Exit(1)
@@ -304,7 +310,7 @@ func main() {
 		fmt.Println("Failed to locate extracted app folder")
 		os.Exit(1)
 	}
-	
+
 	// Move server binary into app folder
 	dstBinPath := filepath.Join(appDir, filepath.Base(binPath))
 	if err := os.Rename(binPath, dstBinPath); err != nil {
@@ -314,7 +320,7 @@ func main() {
 
 	// Make start script executable (non-Windows)
 	if runtime.GOOS != "windows" {
-		script := filepath.Join(appDir, "start-mac.sh")
+		script := filepath.Join(appDir, "start.sh")
 		if err := ensureExecutable(script); err != nil {
 			fmt.Printf("Failed to make start script executable: %v\n", err)
 			os.Exit(1)
@@ -324,18 +330,24 @@ func main() {
 	fmt.Println("\n========================================")
 	fmt.Println("✅ Installation Complete!")
 	fmt.Println("========================================")
-	fmt.Printf("\nInstall location: %s\n", appDir)
-	fmt.Println("\nTo start the server:")
-	
+
+	// Launch the app via platform-specific startup script
+	var script string
 	if runtime.GOOS == "windows" {
-		fmt.Printf("  cd \"%s\"\n", appDir)
-		fmt.Printf("  start-windows.bat\n")
+		script = filepath.Join(appDir, "start.bat")
 	} else {
-		fmt.Printf("  cd '%s'\n", appDir)
-		fmt.Printf("  ./start-mac.sh\n")
+		script = filepath.Join(appDir, "start.sh")
 	}
-	
-	fmt.Println("\nThe server will launch in your terminal and be ready to use!")
-	fmt.Println("Press Enter to exit...")
-	bufio.NewScanner(os.Stdin).Scan()
+
+	fmt.Printf("Launching: %s\n", script)
+	cmd := exec.Command(script)
+	cmd.Dir = appDir
+	cmd.Stdout = os.Stdout
+	cmd.Stderr = os.Stderr
+	cmd.Stdin = os.Stdin
+
+	if err := cmd.Run(); err != nil {
+		fmt.Printf("Error launching startup script: %v\n", err)
+		os.Exit(1)
+	}
 }
