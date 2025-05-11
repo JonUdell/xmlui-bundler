@@ -2,11 +2,9 @@
 package main
 
 import (
-	"archive/tar"
 	"archive/zip"
 	"bufio"
 	"bytes"
-	"compress/gzip"
 	"fmt"
 	"io"
 	"os"
@@ -117,40 +115,6 @@ func unzipTo(data []byte, dest string) error {
 	return nil
 }
 
-func untarGzTo(data []byte, dest string) (string, error) {
-	gzReader, err := gzip.NewReader(bytes.NewReader(data))
-	if err != nil {
-		return "", err
-	}
-	tarReader := tar.NewReader(gzReader)
-	var lastBinaryPath string
-	for {
-		hdr, err := tarReader.Next()
-		if err == io.EOF {
-			break
-		}
-		if err != nil {
-			return "", err
-		}
-		fpath := filepath.Join(dest, hdr.Name)
-		if hdr.FileInfo().IsDir() {
-			os.MkdirAll(fpath, os.ModePerm)
-			continue
-		}
-		os.MkdirAll(filepath.Dir(fpath), os.ModePerm)
-		f, err := os.Create(fpath)
-		if err != nil {
-			return "", err
-		}
-		if _, err := io.Copy(f, tarReader); err != nil {
-			return "", err
-		}
-		f.Close()
-		lastBinaryPath = fpath
-	}
-	return lastBinaryPath, nil
-}
-
 func ensureExecutable(path string) error {
 	if err := os.Chmod(path, 0755); err != nil {
 		return err
@@ -185,7 +149,7 @@ func main() {
 	installDir := promptForInstallPath(filepath.Join(home, defaultDirName))
 	os.MkdirAll(installDir, 0755)
 
-	fmt.Println("Step 1/4: Downloading XMLUI invoice app...")
+	fmt.Println("Step 1/5: Downloading XMLUI invoice app...")
 	appZip, err := downloadWithProgress(appZipURL, "XMLUI invoice app")
 	if err != nil {
 		fmt.Println("Failed to download app:", err)
@@ -202,7 +166,7 @@ func main() {
 		os.Exit(1)
 	}
 
-	fmt.Println("Step 2/4: Downloading XMLUI components...")
+	fmt.Println("Step 2/5: Downloading XMLUI components...")
 	components, err := downloadWithProgress(xmluiComponentsURL, "XMLUI components")
 	if err != nil {
 		fmt.Println("Failed to download components:", err)
@@ -214,51 +178,68 @@ func main() {
 	}
 	fmt.Println("✓ Extracted components")
 
-	fmt.Println("Step 3/4: Downloading test server...")
-	serverURL := getPlatformSpecificServerURL()
-	serverArchive, err := downloadWithProgress(serverURL, "test server")
-	if err != nil {
-		fmt.Println("Failed to download test server:", err)
-		os.Exit(1)
-	}
-	var serverBin string
-	if strings.HasSuffix(serverURL, ".zip") {
-		if err := unzipTo(serverArchive, appDir); err != nil {
-			fmt.Println("Failed to extract test server:", err)
-			os.Exit(1)
-		}
-		serverBin = filepath.Join(appDir, "xmlui-test-server.exe")
-	} else {
-		serverBin, err = untarGzTo(serverArchive, appDir)
-		if err != nil {
-			fmt.Println("Failed to extract test server:", err)
-			os.Exit(1)
-		}
-	}
-	_ = ensureExecutable(serverBin)
-
-	fmt.Println("Step 4/4: Organizing files...")
+	// Move src
 	srcFrom := filepath.Join(installDir, "xmlui", "src")
 	srcTo := filepath.Join(installDir, "src")
 	_ = os.Rename(srcFrom, srcTo)
 	_ = os.RemoveAll(filepath.Join(installDir, "xmlui"))
 
+	// Step 3/5: Download and unpack MCP tools
+	fmt.Println("Step 3/5: Downloading MCP tools...")
+	mcpZip, err := downloadWithProgress(getPlatformSpecificMCPURL(), "MCP tools")
+	if err != nil {
+		fmt.Println("Failed to download MCP tools:", err)
+		os.Exit(1)
+	}
+	tmpMCP := filepath.Join(installDir, "mcpTmp")
+	os.MkdirAll(tmpMCP, 0755)
+	if err := unzipTo(mcpZip, tmpMCP); err != nil {
+		fmt.Println("Failed to extract MCP tools:", err)
+		os.Exit(1)
+	}
+
 	mcpDir := filepath.Join(installDir, "mcp")
 	os.MkdirAll(mcpDir, 0755)
 	for _, name := range []string{"xmlui-mcp", "xmlui-mcp-client", "run-mcp-client.sh"} {
-		oldPath := filepath.Join(installDir, name)
-		newPath := filepath.Join(mcpDir, name)
-		_ = os.Rename(oldPath, newPath)
-		if strings.HasSuffix(name, ".sh") || !strings.HasSuffix(name, ".exe") {
-			_ = ensureExecutable(newPath)
+		src := filepath.Join(tmpMCP, name)
+		dst := filepath.Join(mcpDir, name)
+		if err := os.Rename(src, dst); err == nil {
+			if strings.HasSuffix(name, ".sh") || !strings.HasSuffix(name, ".exe") {
+				_ = ensureExecutable(dst)
+			}
 		}
 	}
+	_ = os.RemoveAll(tmpMCP)
 
+	// Step 4/5: Download and install test server
+	fmt.Println("Step 4/5: Downloading test server...")
+	serverZip, err := downloadWithProgress(getPlatformSpecificServerURL(), "XMLUI test server")
+	if err != nil {
+		fmt.Println("Failed to download server:", err)
+		os.Exit(1)
+	}
+	tmpServer := filepath.Join(installDir, "serverTmp")
+	os.MkdirAll(tmpServer, 0755)
+	if err := unzipTo(serverZip, tmpServer); err != nil {
+		fmt.Println("Failed to extract server:", err)
+		os.Exit(1)
+	}
+	serverBinary := filepath.Join(tmpServer, "xmlui-test-server")
+	if runtime.GOOS == "windows" {
+		serverBinary += ".exe"
+	}
+	targetBinary := filepath.Join(appDir, filepath.Base(serverBinary))
+	_ = os.Rename(serverBinary, targetBinary)
+	_ = ensureExecutable(targetBinary)
+	_ = os.RemoveAll(tmpServer)
+
+	// Make sure start.sh is executable
 	_ = ensureExecutable(filepath.Join(appDir, "start.sh"))
 
 	fmt.Println("✓ Organized layout complete")
 	fmt.Printf("\nInstall location: %s\n", installDir)
 
+	// Launch server
 	script := filepath.Join(appDir, "start.sh")
 	fmt.Println("Launching server:", script)
 	cmd := exec.Command(script)
