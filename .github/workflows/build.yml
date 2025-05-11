@@ -64,29 +64,29 @@ jobs:
     steps:
     - uses: actions/checkout@v4
       with:
-        token: ${{ secrets.GITHUB_TOKEN }}
-        
+        token: ${{ secrets.PAT_TOKEN }}
+
     - name: Checkout XMLUI repo
       uses: actions/checkout@v4
       with:
         repository: xmlui-com/xmlui
         token: ${{ secrets.XMLUI_REPO_TOKEN }}
         path: xmlui-source
-        
+
     - name: Package XMLUI components
       run: |
         mkdir -p xmlui-components/docs/pages/components
         mkdir -p xmlui-components/xmlui/src/components
-        
+
         # Copy the specific directories
         cp -r xmlui-source/docs/pages/components/* xmlui-components/docs/pages/components/
         cp -r xmlui-source/xmlui/src/components/* xmlui-components/xmlui/src/components/
-        
+
         # Create zip file
         cd xmlui-components
         zip -r ../xmlui-components.zip .
         cd ..
-        
+
     - name: Upload component package
       uses: actions/upload-artifact@v4
       with:
@@ -97,51 +97,51 @@ jobs:
     name: Create Release
     needs: [build, package-components]
     runs-on: ubuntu-latest
-    
+
     steps:
     - uses: actions/checkout@v4
-    
+
     - name: Create and push tag
       run: |
         git config --local user.email "action@github.com"
         git config --local user.name "GitHub Action"
         git tag -a ${{ github.event.inputs.tag }} -m "Release ${{ github.event.inputs.tag }}"
         git push origin ${{ github.event.inputs.tag }}
-    
+
     - name: Download all artifacts
       uses: actions/download-artifact@v4
-      
+
     - name: Create Release
       id: create_release
       uses: actions/create-release@v1
       env:
-        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        GITHUB_TOKEN: ${{ secrets.PAT_TOKEN }}
       with:
         tag_name: ${{ github.event.inputs.tag }}
         release_name: XMLUI Launcher ${{ github.event.inputs.tag }}
         prerelease: ${{ github.event.inputs.prerelease }}
         body: |
           # XMLUI Launcher ${{ github.event.inputs.tag }}
-          
+
           Cross-platform installer for XMLUI development environment.
-          
+
           ## Quick Start
-          
+
           1. Download the appropriate binary for your platform
           2. Run the installer and follow the prompts
           3. Start developing with XMLUI!
-          
+
           ## Downloads
-          
+
           | Platform | Architecture | Download |
           |----------|-------------|----------|
           | macOS | Apple Silicon (ARM64) | [xmlui-launcher-macos-arm64](https://github.com/jonudell/xmlui-launcher/releases/download/${{ github.event.inputs.tag }}/xmlui-launcher-macos-arm64) |
           | macOS | Intel (AMD64) | [xmlui-launcher-macos-amd64](https://github.com/jonudell/xmlui-launcher/releases/download/${{ github.event.inputs.tag }}/xmlui-launcher-macos-amd64) |
           | Linux | AMD64 | [xmlui-launcher-linux-amd64](https://github.com/jonudell/xmlui-launcher/releases/download/${{ github.event.inputs.tag }}/xmlui-launcher-linux-amd64) |
           | Windows | AMD64 | [xmlui-launcher-windows-amd64.exe](https://github.com/jonudell/xmlui-launcher/releases/download/${{ github.event.inputs.tag }}/xmlui-launcher-windows-amd64.exe) |
-          
+
           ## Installation Instructions
-          
+
           ### macOS/Linux
           ```bash
           # Download and run
@@ -149,65 +149,65 @@ jobs:
           chmod +x xmlui-launcher-[platform]
           ./xmlui-launcher-[platform]
           ```
-          
+
           ### Windows
           Download the executable and run it from your terminal or command prompt.
-          
+
           ## What's Included
-          
+
           - XMLUI Invoice Example App
           - XMLUI Test Server (platform-specific)
           - XMLUI Components (docs and source)
           - XMLUI MCP Binary (platform-specific)
-          
+
           ## Support
-          
+
           Found an issue? [Open a ticket](https://github.com/jonudell/xmlui-launcher/issues)
-        
+
     - name: Upload Linux build
       uses: actions/upload-release-asset@v1
       env:
-        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        GITHUB_TOKEN: ${{ secrets.PAT_TOKEN }}
       with:
         upload_url: ${{ steps.create_release.outputs.upload_url }}
         asset_path: ./xmlui-launcher-linux-amd64/xmlui-launcher-linux-amd64
         asset_name: xmlui-launcher-linux-amd64
         asset_content_type: application/octet-stream
-        
+
     - name: Upload macOS AMD64 build
       uses: actions/upload-release-asset@v1
       env:
-        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        GITHUB_TOKEN: ${{ secrets.PAT_TOKEN }}
       with:
         upload_url: ${{ steps.create_release.outputs.upload_url }}
         asset_path: ./xmlui-launcher-macos-amd64/xmlui-launcher-macos-amd64
         asset_name: xmlui-launcher-macos-amd64
         asset_content_type: application/octet-stream
-        
+
     - name: Upload macOS ARM64 build
       uses: actions/upload-release-asset@v1
       env:
-        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        GITHUB_TOKEN: ${{ secrets.PAT_TOKEN }}
       with:
         upload_url: ${{ steps.create_release.outputs.upload_url }}
         asset_path: ./xmlui-launcher-macos-arm64/xmlui-launcher-macos-arm64
         asset_name: xmlui-launcher-macos-arm64
         asset_content_type: application/octet-stream
-        
+
     - name: Upload Windows build
       uses: actions/upload-release-asset@v1
       env:
-        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        GITHUB_TOKEN: ${{ secrets.PAT_TOKEN }}
       with:
         upload_url: ${{ steps.create_release.outputs.upload_url }}
         asset_path: ./xmlui-launcher-windows-amd64.exe/xmlui-launcher-windows-amd64.exe
         asset_name: xmlui-launcher-windows-amd64.exe
         asset_content_type: application/octet-stream
-        
+
     - name: Upload XMLUI components
       uses: actions/upload-release-asset@v1
       env:
-        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        GITHUB_TOKEN: ${{ secrets.PAT_TOKEN }}
       with:
         upload_url: ${{ steps.create_release.outputs.upload_url }}
         asset_path: ./xmlui-components.zip/xmlui-components.zip
