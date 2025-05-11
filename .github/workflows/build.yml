@@ -1,12 +1,7 @@
 name: Build XMLUI Launcher
 
 on:
-  push:
-    branches: [ main ]
-  pull_request:
-    branches: [ main ]
-  release:
-    types: [created]
+  workflow_dispatch:
 
 jobs:
   build:
@@ -59,29 +54,29 @@ jobs:
     steps:
     - uses: actions/checkout@v4
       with:
-        token: ${{ secrets.GITHUB_TOKEN }}
-        
+        token: ${{ secrets.PAT_TOKEN }}
+
     - name: Checkout XMLUI repo
       uses: actions/checkout@v4
       with:
         repository: xmlui-com/xmlui
         token: ${{ secrets.XMLUI_REPO_TOKEN }}
         path: xmlui-source
-        
+
     - name: Package XMLUI components
       run: |
         mkdir -p xmlui-components/docs/pages/components
         mkdir -p xmlui-components/xmlui/src/components
-        
+
         # Copy the specific directories
         cp -r xmlui-source/docs/pages/components/* xmlui-components/docs/pages/components/
         cp -r xmlui-source/xmlui/src/components/* xmlui-components/xmlui/src/components/
-        
+
         # Create zip file
         cd xmlui-components
         zip -r ../xmlui-components.zip .
         cd ..
-        
+
     - name: Upload component package
       uses: actions/upload-artifact@v3
       with:
@@ -93,58 +88,58 @@ jobs:
     needs: [build, package-components]
     runs-on: ubuntu-latest
     if: github.event_name == 'release'
-    
+
     steps:
     - name: Download all artifacts
       uses: actions/download-artifact@v3
-      
+
     - name: Display structure
       run: ls -la
-      
+
     - name: Upload Linux build
       uses: actions/upload-release-asset@v1
       env:
-        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        GITHUB_TOKEN: ${{ secrets.PAT_TOKEN }}
       with:
         upload_url: ${{ github.event.release.upload_url }}
         asset_path: ./xmlui-launcher-linux-amd64/xmlui-launcher-linux-amd64
         asset_name: xmlui-launcher-linux-amd64
         asset_content_type: application/octet-stream
-        
+
     - name: Upload macOS AMD64 build
       uses: actions/upload-release-asset@v1
       env:
-        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        GITHUB_TOKEN: ${{ secrets.PAT_TOKEN }}
       with:
         upload_url: ${{ github.event.release.upload_url }}
         asset_path: ./xmlui-launcher-macos-amd64/xmlui-launcher-macos-amd64
         asset_name: xmlui-launcher-macos-amd64
         asset_content_type: application/octet-stream
-        
+
     - name: Upload macOS ARM64 build
       uses: actions/upload-release-asset@v1
       env:
-        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        GITHUB_TOKEN: ${{ secrets.PAT_TOKEN }}
       with:
         upload_url: ${{ github.event.release.upload_url }}
         asset_path: ./xmlui-launcher-macos-arm64/xmlui-launcher-macos-arm64
         asset_name: xmlui-launcher-macos-arm64
         asset_content_type: application/octet-stream
-        
+
     - name: Upload Windows build
       uses: actions/upload-release-asset@v1
       env:
-        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        GITHUB_TOKEN: ${{ secrets.PAT_TOKEN }}
       with:
         upload_url: ${{ github.event.release.upload_url }}
         asset_path: ./xmlui-launcher-windows-amd64.exe/xmlui-launcher-windows-amd64.exe
         asset_name: xmlui-launcher-windows-amd64.exe
         asset_content_type: application/octet-stream
-        
+
     - name: Upload XMLUI components
       uses: actions/upload-release-asset@v1
       env:
-        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        GITHUB_TOKEN: ${{ secrets.PAT_TOKEN }}
       with:
         upload_url: ${{ github.event.release.upload_url }}
         asset_path: ./xmlui-components.zip/xmlui-components.zip
