@@ -24,6 +24,7 @@ const (
 	branchName     = "main"
 	appZipURL      = "https://codeload.github.com/jonudell/" + repoName + "/zip/refs/heads/" + branchName
 	serverTarGzURL = "https://github.com/JonUdell/xmlui-test-server/releases/download/v1.0.0/xmlui-test-server-mac-arm.tar.gz"
+	xmluiZipURL    = "https://codeload.github.com/xmlui-com/xmlui/zip/refs/heads/main"
 )
 
 func getPlatformSpecificMCPURL() string {
@@ -82,6 +83,12 @@ return posixPath`
 func downloadWithCurl(url string) ([]byte, error) {
 	fmt.Println("Downloading with curl:", url)
 	cmd := exec.Command("curl", "-L", "-sS", url)
+	
+	// Add GitHub token if available for private repos
+	if token := os.Getenv("GITHUB_TOKEN"); token != "" && strings.Contains(url, "github.com") {
+		cmd.Args = append(cmd.Args, "-H", fmt.Sprintf("Authorization: token %s", token))
+	}
+	
 	var out bytes.Buffer
 	cmd.Stdout = &out
 	cmd.Stderr = os.Stderr
@@ -97,6 +104,47 @@ func unzipTo(data []byte, dest string) error {
 		return err
 	}
 	for _, f := range r.File {
+		fpath := filepath.Join(dest, f.Name)
+		if f.FileInfo().IsDir() {
+			os.MkdirAll(fpath, os.ModePerm)
+			continue
+		}
+		os.MkdirAll(filepath.Dir(fpath), os.ModePerm)
+		in, err := f.Open()
+		if err != nil {
+			return err
+		}
+		out, err := os.Create(fpath)
+		if err != nil {
+			return err
+		}
+		io.Copy(out, in)
+		in.Close()
+		out.Close()
+	}
+	return nil
+}
+
+// Unzip only specific directories from a zip file
+func unzipSpecificPaths(data []byte, dest string, paths []string) error {
+	r, err := zip.NewReader(bytes.NewReader(data), int64(len(data)))
+	if err != nil {
+		return err
+	}
+	for _, f := range r.File {
+		// Check if this file matches one of our target paths
+		shouldExtract := false
+		for _, targetPath := range paths {
+			if strings.Contains(f.Name, targetPath) {
+				shouldExtract = true
+				break
+			}
+		}
+
+		if !shouldExtract {
+			continue
+		}
+
 		fpath := filepath.Join(dest, f.Name)
 		if f.FileInfo().IsDir() {
 			os.MkdirAll(fpath, os.ModePerm)
@@ -228,6 +276,21 @@ func main() {
 	binPath, err := untarGzTo(serverTarGz, installDir)
 	if err != nil {
 		fmt.Println("Failed to unpack server tar.gz:", err)
+		return
+	}
+
+	// Download XMLUI components
+	_ = exec.Command("osascript", "-e",
+	`display dialog "Downloading XMLUI components..." buttons {"OK"} giving up after 5`).Run()
+	
+	xmluiZip, err := downloadWithCurl(xmluiZipURL)
+	if err != nil {
+		fmt.Println("Failed to download XMLUI components:", err)
+		return
+	}
+	componentPaths := []string{"docs/pages/components/", "xmlui/src/components/"}
+	if err := unzipSpecificPaths(xmluiZip, installDir, componentPaths); err != nil {
+		fmt.Println("Failed to unzip XMLUI components:", err)
 		return
 	}
 
