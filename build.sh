@@ -1,3 +1,6 @@
+#!/bin/bash
+echo "Building xmlui-launcher ..."
 go build xmlui-launcher.go
-./make-app.sh 
-cp -R XMLUILauncher.app ~/Desktop/
+chmod +x xmlui-launcher
+
+

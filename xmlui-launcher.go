@@ -14,17 +14,16 @@ import (
 	"path/filepath"
 	"runtime"
 	"strings"
-	"syscall"
-
-	"golang.org/x/term"
 )
 
 const (
 	repoName       = "xmlui-invoice"
+	defaultDirName = "xmlui-getting-started"
 	branchName     = "main"
 	appZipURL      = "https://codeload.github.com/jonudell/" + repoName + "/zip/refs/heads/" + branchName
 	serverTarGzURL = "https://github.com/JonUdell/xmlui-test-server/releases/download/v1.0.0/xmlui-test-server-mac-arm.tar.gz"
-	xmluiZipURL    = "https://codeload.github.com/xmlui-com/xmlui/zip/refs/heads/main"
+	// Pre-built XMLUI components from public release
+	xmluiComponentsURL = "https://github.com/jonudell/xmlui-launcher/releases/download/v1.0.0/xmlui-components.zip"
 )
 
 func getPlatformSpecificMCPURL() string {
@@ -48,6 +47,27 @@ func getPlatformSpecificMCPURL() string {
 	}
 }
 
+func getPlatformSpecificServerURL() string {
+	baseURL := "https://github.com/JonUdell/xmlui-test-server/releases/download/v1.0.0/"
+	
+	// Determine platform and architecture
+	arch := runtime.GOARCH
+	switch runtime.GOOS {
+	case "darwin":
+		if arch == "arm64" {
+			return baseURL + "xmlui-test-server-mac-arm.tar.gz"
+		} else {
+			return baseURL + "xmlui-test-server-mac-intel.tar.gz"
+		}
+	case "linux":
+		return baseURL + "xmlui-test-server-linux-amd64.tar.gz"
+	case "windows":
+		return baseURL + "xmlui-test-server-windows-amd64.zip"
+	default:
+		return baseURL + "xmlui-test-server-mac-arm.tar.gz" // Default fallback
+	}
+}
+
 func promptForInstallPath(defaultPath string) string {
 	fmt.Printf("Install app to default location (%s)? [Y/n]: ", defaultPath)
 	scanner := bufio.NewScanner(os.Stdin)
@@ -64,37 +84,19 @@ func promptForInstallPath(defaultPath string) string {
 	return defaultPath
 }
 
-func askUserForFolder(defaultPath string) string {
-	if term.IsTerminal(int(syscall.Stdin)) {
-		return promptForInstallPath(defaultPath)
-	}
-
-	script := `tell application "System Events"
-	activate
-	set chosenFolder to choose folder with prompt "Choose install location for the app"
-	set posixPath to POSIX path of chosenFolder
-end tell
-return posixPath`
-
-	out, _ := exec.Command("osascript", "-e", script).Output()
-	return strings.TrimSpace(string(out))
-}
-
-func downloadWithCurl(url string) ([]byte, error) {
-	fmt.Println("Downloading with curl:", url)
-	cmd := exec.Command("curl", "-L", "-sS", url)
+func downloadWithProgress(url, filename string) ([]byte, error) {
+	fmt.Printf("Downloading %s...\n", filename)
+	fmt.Printf("  From: %s\n", url)
 	
-	// Add GitHub token if available for private repos
-	if token := os.Getenv("GITHUB_TOKEN"); token != "" && strings.Contains(url, "github.com") {
-		cmd.Args = append(cmd.Args, "-H", fmt.Sprintf("Authorization: token %s", token))
-	}
-	
+	cmd := exec.Command("curl", "-L", "-sS", "-#", url)
 	var out bytes.Buffer
 	cmd.Stdout = &out
 	cmd.Stderr = os.Stderr
 	if err := cmd.Run(); err != nil {
 		return nil, fmt.Errorf("curl failed: %w", err)
 	}
+	
+	fmt.Printf("  Downloaded: %d bytes\n", out.Len())
 	return out.Bytes(), nil
 }
 
@@ -103,48 +105,15 @@ func unzipTo(data []byte, dest string) error {
 	if err != nil {
 		return err
 	}
+	
+	fmt.Printf("  Extracting %d files...\n", len(r.File))
+	count := 0
 	for _, f := range r.File {
-		fpath := filepath.Join(dest, f.Name)
-		if f.FileInfo().IsDir() {
-			os.MkdirAll(fpath, os.ModePerm)
-			continue
+		count++
+		if count%10 == 0 || count == len(r.File) {
+			fmt.Printf("  Progress: %d/%d files\n", count, len(r.File))
 		}
-		os.MkdirAll(filepath.Dir(fpath), os.ModePerm)
-		in, err := f.Open()
-		if err != nil {
-			return err
-		}
-		out, err := os.Create(fpath)
-		if err != nil {
-			return err
-		}
-		io.Copy(out, in)
-		in.Close()
-		out.Close()
-	}
-	return nil
-}
-
-// Unzip only specific directories from a zip file
-func unzipSpecificPaths(data []byte, dest string, paths []string) error {
-	r, err := zip.NewReader(bytes.NewReader(data), int64(len(data)))
-	if err != nil {
-		return err
-	}
-	for _, f := range r.File {
-		// Check if this file matches one of our target paths
-		shouldExtract := false
-		for _, targetPath := range paths {
-			if strings.Contains(f.Name, targetPath) {
-				shouldExtract = true
-				break
-			}
-		}
-
-		if !shouldExtract {
-			continue
-		}
-
+		
 		fpath := filepath.Join(dest, f.Name)
 		if f.FileInfo().IsDir() {
 			os.MkdirAll(fpath, os.ModePerm)
@@ -175,6 +144,9 @@ func untarGzTo(data []byte, dest string) (string, error) {
 	tarReader := tar.NewReader(gzReader)
 
 	var lastBinaryPath string
+	count := 0
+	fmt.Println("  Extracting .tar.gz...")
+	
 	for {
 		hdr, err := tarReader.Next()
 		if err == io.EOF {
@@ -183,6 +155,12 @@ func untarGzTo(data []byte, dest string) (string, error) {
 		if err != nil {
 			return "", err
 		}
+		
+		count++
+		if count%5 == 0 {
+			fmt.Printf("  Progress: %d files\n", count)
+		}
+		
 		fpath := filepath.Join(dest, hdr.Name)
 		if hdr.Typeflag == tar.TypeDir {
 			os.MkdirAll(fpath, os.ModePerm)
@@ -204,28 +182,6 @@ func untarGzTo(data []byte, dest string) (string, error) {
 	return lastBinaryPath, nil
 }
 
-func copyFile(src, dst string) error {
-	srcFile, err := os.Open(src)
-	if err != nil {
-		return err
-	}
-	defer srcFile.Close()
-	dstFile, err := os.Create(dst)
-	if err != nil {
-		return err
-	}
-	defer dstFile.Close()
-	_, err = io.Copy(dstFile, srcFile)
-	if err != nil {
-		return err
-	}
-	return os.Chmod(dst, 0755)
-}
-
-func escapeAppleScriptString(s string) string {
-	return strings.ReplaceAll(s, "\"", `\"`)
-}
-
 func ensureExecutable(path string) error {
 	if _, err := os.Stat(path); os.IsNotExist(err) {
 		return fmt.Errorf("file not found: %s", path)
@@ -233,87 +189,100 @@ func ensureExecutable(path string) error {
 	if err := os.Chmod(path, 0755); err != nil {
 		fmt.Printf("Go chmod failed for %s: %v\n", path, err)
 	} else {
-		fmt.Printf("Go chmod succeeded for %s\n", path)
+		fmt.Printf("Made %s executable\n", path)
 	}
 	if err := exec.Command("chmod", "+x", path).Run(); err != nil {
 		fmt.Printf("Shell chmod +x failed for %s: %v\n", path, err)
-	} else {
-		fmt.Printf("Shell chmod +x succeeded for %s\n", path)
-	}
-	if fi, err := os.Stat(path); err == nil {
-		fmt.Printf("Final mode for %s: %v\n", path, fi.Mode())
 	}
 	return nil
 }
 
 func main() {
+	fmt.Println("=== XMLUI Getting Started Installer ===")
+	fmt.Printf("Platform: %s/%s\n\n", runtime.GOOS, runtime.GOARCH)
+	
 	home, _ := os.UserHomeDir()
-	defaultDir := filepath.Join(home, repoName)
-	installDir := askUserForFolder(defaultDir)
+	defaultDir := filepath.Join(home, defaultDirName)
+	installDir := promptForInstallPath(defaultDir)
 	os.MkdirAll(installDir, 0755)
+	
+	fmt.Printf("\nInstalling to: %s\n", installDir)
+	fmt.Println("\n----------------------------------------")
 
-	_ = exec.Command("osascript", "-e",
-	`display dialog "Downloading app files..." buttons {"OK"} giving up after 3`).Run()
-
-	appZip, err := downloadWithCurl(appZipURL)
+	// Download XMLUI invoice app
+	fmt.Println("Step 1/4: Downloading XMLUI invoice app...")
+	appZip, err := downloadWithProgress(appZipURL, "XMLUI invoice app")
 	if err != nil {
-		fmt.Println("Failed to download app zip:", err)
-		return
+		fmt.Printf("Failed to download app: %v\n", err)
+		os.Exit(1)
 	}
 	if err := unzipTo(appZip, installDir); err != nil {
-		fmt.Println("Failed to unzip app:", err)
-		return
+		fmt.Printf("Failed to extract app: %v\n", err)
+		os.Exit(1)
 	}
+	fmt.Println("  ✓ Complete")
 
-	_ = exec.Command("osascript", "-e",
-	`display dialog "Downloading test server..." buttons {"OK"} giving up after 5`).Run()
+	// Download test server
+	fmt.Println("\nStep 2/4: Downloading test server...")
+	serverURL := getPlatformSpecificServerURL()
+	serverData, err := downloadWithProgress(serverURL, "test server")
+	if err != nil {
+		fmt.Printf("Failed to download server: %v\n", err)
+		os.Exit(1)
+	}
 	
-	serverTarGz, err := downloadWithCurl(serverTarGzURL)
-	if err != nil {
-		fmt.Println("Failed to download server tar.gz:", err)
-		return
+	var binPath string
+	if strings.HasSuffix(serverURL, ".tar.gz") {
+		binPath, err = untarGzTo(serverData, installDir)
+	} else {
+		// Windows zip file
+		if err := unzipTo(serverData, installDir); err != nil {
+			fmt.Printf("Failed to extract server: %v\n", err)
+			os.Exit(1)
+		}
+		// Find the executable
+		binPath = filepath.Join(installDir, "xmlui-test-server.exe")
 	}
-	binPath, err := untarGzTo(serverTarGz, installDir)
+	
 	if err != nil {
-		fmt.Println("Failed to unpack server tar.gz:", err)
-		return
+		fmt.Printf("Failed to extract server: %v\n", err)
+		os.Exit(1)
 	}
+	fmt.Println("  ✓ Complete")
 
 	// Download XMLUI components
-	_ = exec.Command("osascript", "-e",
-	`display dialog "Downloading XMLUI components..." buttons {"OK"} giving up after 5`).Run()
-	
-	xmluiZip, err := downloadWithCurl(xmluiZipURL)
+	fmt.Println("\nStep 3/4: Downloading XMLUI components...")
+	xmluiComponents, err := downloadWithProgress(xmluiComponentsURL, "XMLUI components")
 	if err != nil {
-		fmt.Println("Failed to download XMLUI components:", err)
-		return
+		fmt.Printf("Failed to download components: %v\n", err)
+		os.Exit(1)
 	}
-	componentPaths := []string{"docs/pages/components/", "xmlui/src/components/"}
-	if err := unzipSpecificPaths(xmluiZip, installDir, componentPaths); err != nil {
-		fmt.Println("Failed to unzip XMLUI components:", err)
-		return
+	if err := unzipTo(xmluiComponents, installDir); err != nil {
+		fmt.Printf("Failed to extract components: %v\n", err)
+		os.Exit(1)
 	}
+	fmt.Println("  ✓ Complete")
 
 	// Download XMLUI MCP binary
-	_ = exec.Command("osascript", "-e",
-	`display dialog "Downloading XMLUI MCP binary..." buttons {"OK"} giving up after 5`).Run()
-	
+	fmt.Println("\nStep 4/4: Downloading XMLUI MCP binary...")
 	mcpURL := getPlatformSpecificMCPURL()
-	fmt.Printf("Downloading MCP binary from: %s\n", mcpURL)
-	mcpZip, err := downloadWithCurl(mcpURL)
+	mcpZip, err := downloadWithProgress(mcpURL, "XMLUI MCP binary")
 	if err != nil {
-		fmt.Println("Failed to download XMLUI MCP binary:", err)
-		return
+		fmt.Printf("Failed to download MCP binary: %v\n", err)
+		os.Exit(1)
 	}
 	if err := unzipTo(mcpZip, installDir); err != nil {
-		fmt.Println("Failed to unzip XMLUI MCP binary:", err)
-		return
+		fmt.Printf("Failed to extract MCP binary: %v\n", err)
+		os.Exit(1)
 	}
+	fmt.Println("  ✓ Complete")
 
+	// Organize files
+	fmt.Println("\nOrganizing files...")
 	dirs, err := os.ReadDir(installDir)
 	if err != nil {
-		fmt.Println("Failed to read install directory:", err)
-		return
+		fmt.Printf("Failed to read install directory: %v\n", err)
+		os.Exit(1)
 	}
 
 	var appDir string
@@ -322,7 +291,7 @@ func main() {
 			src := filepath.Join(installDir, d.Name())
 			dst := filepath.Join(installDir, repoName)
 			if err := os.Rename(src, dst); err != nil {
-				fmt.Printf("Warning: could not rename %s to %s (maybe already exists): %v\n", src, dst, err)
+				fmt.Printf("Warning: could not rename %s to %s: %v\n", src, dst, err)
 				appDir = src // fallback to unrenamed directory
 			} else {
 				appDir = dst
@@ -333,27 +302,40 @@ func main() {
 
 	if appDir == "" {
 		fmt.Println("Failed to locate extracted app folder")
-		return
+		os.Exit(1)
 	}
+	
+	// Move server binary into app folder
 	dstBinPath := filepath.Join(appDir, filepath.Base(binPath))
 	if err := os.Rename(binPath, dstBinPath); err != nil {
-		fmt.Println("Failed to move server binary into app folder:", err)
-		return
+		fmt.Printf("Failed to move server binary: %v\n", err)
+		os.Exit(1)
 	}
 
-	script := filepath.Join(appDir, "start-mac.sh")
-	if err := ensureExecutable(script); err != nil {
-		fmt.Println("Failed to make start-mac.sh executable:", err)
-		return
+	// Make start script executable (non-Windows)
+	if runtime.GOOS != "windows" {
+		script := filepath.Join(appDir, "start-mac.sh")
+		if err := ensureExecutable(script); err != nil {
+			fmt.Printf("Failed to make start script executable: %v\n", err)
+			os.Exit(1)
+		}
 	}
 
-	cmd := exec.Command("osascript", "-e",
-		fmt.Sprintf(`tell application "Terminal" to do script "cd \"%s\" && bash -i -c './start-mac.sh; echo; echo Server exited. Type exit to close this window.'"`, appDir),
-		"-e", `tell application "Terminal" to activate`)
-	if err := cmd.Run(); err != nil {
-		fmt.Println("Failed to launch start-mac.sh in Terminal:", err)
-		return
+	fmt.Println("\n========================================")
+	fmt.Println("✅ Installation Complete!")
+	fmt.Println("========================================")
+	fmt.Printf("\nInstall location: %s\n", appDir)
+	fmt.Println("\nTo start the server:")
+	
+	if runtime.GOOS == "windows" {
+		fmt.Printf("  cd \"%s\"\n", appDir)
+		fmt.Printf("  start-windows.bat\n")
+	} else {
+		fmt.Printf("  cd '%s'\n", appDir)
+		fmt.Printf("  ./start-mac.sh\n")
 	}
-
-	fmt.Println("✅ App launched.")
+	
+	fmt.Println("\nThe server will launch in your terminal and be ready to use!")
+	fmt.Println("Press Enter to exit...")
+	bufio.NewScanner(os.Stdin).Scan()
 }
