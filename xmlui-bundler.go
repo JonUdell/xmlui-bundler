@@ -19,7 +19,7 @@ const (
 	repoName       = "xmlui-invoice"
 	branchName     = "main"
 	appZipURL      = "https://codeload.github.com/jonudell/" + repoName + "/zip/refs/heads/" + branchName
-	xmluiRepoZip   = "https://codeload.github.com/xmlui-com/xmlui/zip/refs/heads/main"
+	xmluiRepoZip   = "https://github.com/xmlui-com/xmlui/archive/refs/heads/main.zip"
 )
 
 func getPlatformSpecificMCPURL() string {
