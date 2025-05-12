@@ -34,9 +34,9 @@ func getPlatformSpecificMCPURL() string {
 		}
 		return baseURL + "xmlui-mcp-mac-amd.zip"
 	case "linux":
-		return baseURL + "xmlui-mcp-linux-amd.zip"
+		return baseURL + "xmlui-mcp-linux-amd64.zip"
 	case "windows":
-		return baseURL + "xmlui-mcp-windows.zip"
+		return baseURL + "xmlui-mcp-windows-amd64.zip"
 	default:
 		return baseURL + "xmlui-mcp-mac-arm.zip"
 	}
@@ -52,9 +52,9 @@ func getPlatformSpecificServerURL() string {
 		}
 		return baseURL + "xmlui-test-server-mac-amd.tar.gz"
 	case "linux":
-		return baseURL + "xmlui-test-server-linux-amd.tar.gz"
+		return baseURL + "xmlui-test-server-linux-amd64.tar.gz"
 	case "windows":
-		return baseURL + "xmlui-test-server-windows.zip"
+		return baseURL + "xmlui-test-server-windows64.zip"
 	default:
 		return baseURL + "xmlui-test-server-mac-arm.tar.gz"
 	}
