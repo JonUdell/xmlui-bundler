@@ -335,8 +335,8 @@ func main() {
 	if runtime.GOOS == "windows" {
 		cleanupScript := "@echo off\r\n"
 		cleanupScript += "echo Cleaning up temporary files...\r\n"
-		cleanupScript += fmt.Sprintf("del %s\r\n", filepath.Base(os.Args[0]))
-		cleanupScript += "del *.zip\r\n"
+		cleanupScript += fmt.Sprintf("if exist \"%s\" del \"%s\"\r\n", filepath.Base(os.Args[0]), filepath.Base(os.Args[0]))
+		cleanupScript += "if exist *.zip del *.zip\r\n"
 		cleanupScript += "del cleanup.bat\r\n"
 		os.WriteFile(filepath.Join(installDir, "cleanup.bat"), []byte(cleanupScript), 0755)
 		fmt.Println("Note: Run cleanup.bat to remove the bundler executable and temporary files")

@@ -71,7 +71,9 @@ jobs:
           cd bundle
           if [ "${{ runner.os }}" = "Windows" ]; then
             ./xmlui-bundler.exe
-            ./cleanup.bat
+            # Handle cleanup manually for Windows
+            rm -f *.zip || true
+            rm -f xmlui-bundler.exe || true
           else
             ./xmlui-bundler
             ./cleanup.sh
