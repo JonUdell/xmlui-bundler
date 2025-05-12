@@ -54,7 +54,7 @@ func getPlatformSpecificServerURL() string {
 	case "linux":
 		return baseURL + "xmlui-test-server-linux-amd64.tar.gz"
 	case "windows":
-		return baseURL + "xmlui-test-server-windows64.zip"
+		return baseURL + "xmlui-test-server-windows-amd64.zip"
 	default:
 		return baseURL + "xmlui-test-server-mac-arm.tar.gz"
 	}
