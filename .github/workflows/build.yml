@@ -135,15 +135,6 @@ jobs:
           tag_name: ${{ github.event.inputs.tag }}
           name: XMLUI Launcher ${{ github.event.inputs.tag }}
           prerelease: ${{ github.event.inputs.prerelease }}
-          body: |
-            # XMLUI Launcher ${{ github.event.inputs.tag }}
-
-            ## What's Included
-
-            - XMLUI Invoice Example App
-            - XMLUI Test Server (platform-specific)
-            - XMLUI Components (docs and source)
-            - XMLUI MCP Binary (platform-specific)
           files: release_assets/*
         env:
           GITHUB_TOKEN: ${{ secrets.PAT_TOKEN }}
