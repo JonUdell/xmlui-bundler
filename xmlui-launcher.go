@@ -238,12 +238,19 @@ func main() {
 	for _, name := range []string{"xmlui-mcp.exe", "xmlui-mcp-client.exe", "run-mcp-client.sh", "run-mcp-client.bat"} {
 		src := filepath.Join(tmpMCP, name)
 		dst := filepath.Join(mcpDir, name)
-		if err := os.Rename(src, dst); err == nil {
-			if strings.HasSuffix(name, ".sh") || !strings.HasSuffix(name, ".exe") {
-				_ = ensureExecutable(dst)
-			}
+
+		if err := os.Rename(src, dst); err != nil {
+			fmt.Printf("  Skipping %s (not found?): %v\n", name, err)
+			continue
+		}
+
+		fmt.Printf("  Moved %s to %s\n", name, dst)
+
+		if strings.HasSuffix(name, ".sh") || !strings.HasSuffix(name, ".exe") {
+			_ = ensureExecutable(dst)
 		}
 	}
+
 	_ = os.RemoveAll(tmpMCP)
 
 	fmt.Println("Step 4/5: Downloading XMLUI test server...")
