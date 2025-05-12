@@ -41,7 +41,8 @@ jobs:
         with:
           go-version: '1.21'
 
-      - name: Build launcher
+      - name: Build bundler
+        shell: bash
         env:
           GOOS: ${{ matrix.goos }}
           GOARCH: ${{ matrix.goarch }}
@@ -55,16 +56,29 @@ jobs:
 
       - name: Make executable (and clear quarantine)
         if: runner.os != 'Windows'
+        shell: bash
         run: |
           chmod +x bundle/xmlui-bundler
           if [ "$(uname)" = "Darwin" ]; then
             xattr -d com.apple.quarantine bundle/xmlui-bundler || true
           fi
 
+      - name: Run bundler to extract app footprint
+        shell: bash
+        run: |
+          cd bundle
+          if [ "${{ runner.os }}" = "Windows" ]; then
+            ./xmlui-bundler.exe --no-start
+          else
+            ./xmlui-bundler --no-start
+          fi
+
       - name: Add README to bundle
+        shell: bash
         run: cp XMLUI_GETTING_STARTED_README.md bundle/
 
       - name: Zip bundle
+        shell: bash
         run: |
           if [ "${{ runner.os }}" = "Windows" ]; then
             powershell -Command "Compress-Archive -Path bundle\\* -DestinationPath xmlui-bundler-windows-amd64.zip"
