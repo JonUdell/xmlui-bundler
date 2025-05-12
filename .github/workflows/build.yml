@@ -38,60 +38,55 @@ jobs:
             output: xmlui-launcher-windows-amd64.exe
 
     steps:
-    - uses: actions/checkout@v4
+      - uses: actions/checkout@v4
 
-    - name: Set up Go
-      uses: actions/setup-go@v5
-      with:
-        go-version: '1.21'
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.21'
 
-    - name: Build
-      env:
-        GOOS: ${{ matrix.goos }}
-        GOARCH: ${{ matrix.goarch }}
-      run: |
-        go build -v -o ${{ matrix.output }} ./xmlui-launcher.go
+      - name: Build
+        env:
+          GOOS: ${{ matrix.goos }}
+          GOARCH: ${{ matrix.goarch }}
+        run: go build -v -o ${{ matrix.output }} ./xmlui-launcher.go
 
-    - name: Upload artifact
-      uses: actions/upload-artifact@v4
-      with:
-        name: ${{ matrix.output }}
-        path: ${{ matrix.output }}
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: artifacts
+          path: ${{ matrix.output }}
 
   package-components:
     name: Package XMLUI Components
     runs-on: ubuntu-latest
     steps:
-    - uses: actions/checkout@v4
-      with:
-        token: ${{ secrets.PAT_TOKEN }}
+      - uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.PAT_TOKEN }}
 
-    - name: Checkout XMLUI repo
-      uses: actions/checkout@v4
-      with:
-        repository: xmlui-com/xmlui
-        token: ${{ secrets.PAT_TOKEN }}
-        path: xmlui-source
+      - name: Checkout XMLUI repo
+        uses: actions/checkout@v4
+        with:
+          repository: xmlui-com/xmlui
+          token: ${{ secrets.PAT_TOKEN }}
+          path: xmlui-source
 
-    - name: Package XMLUI components
-      run: |
-        mkdir -p xmlui-components/docs/pages/components
-        mkdir -p xmlui-components/xmlui/src/components
+      - name: Package XMLUI components
+        run: |
+          mkdir -p xmlui-components/docs/pages/components
+          mkdir -p xmlui-components/xmlui/src/components
+          cp -r xmlui-source/docs/pages/components/* xmlui-components/docs/pages/components/
+          cp -r xmlui-source/xmlui/src/components/* xmlui-components/xmlui/src/components/
+          cd xmlui-components
+          zip -r ../xmlui-components.zip .
+          cd ..
 
-        # Copy the specific directories
-        cp -r xmlui-source/docs/pages/components/* xmlui-components/docs/pages/components/
-        cp -r xmlui-source/xmlui/src/components/* xmlui-components/xmlui/src/components/
-
-        # Create zip file
-        cd xmlui-components
-        zip -r ../xmlui-components.zip .
-        cd ..
-
-    - name: Upload component package
-      uses: actions/upload-artifact@v4
-      with:
-        name: xmlui-components.zip
-        path: xmlui-components.zip
+      - name: Upload component package
+        uses: actions/upload-artifact@v4
+        with:
+          name: artifacts
+          path: xmlui-components.zip
 
   create-release:
     name: Create Release
@@ -99,83 +94,54 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-    - uses: actions/checkout@v4
-      with:
-        token: ${{ secrets.PAT_TOKEN }}
-    - name: Create and push tag
-      run: |
-        git config --local user.email "action@github.com"
-        git config --local user.name "GitHub Action"
-        git tag -a ${{ github.event.inputs.tag }} -m "Release ${{ github.event.inputs.tag }}"
-        git push origin ${{ github.event.inputs.tag }}
+      - uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.PAT_TOKEN }}
 
-    - name: Download all artifacts
-      uses: actions/download-artifact@v4
+      - name: Check for existing tag
+        run: |
+          if git ls-remote --tags origin | grep -q "refs/tags/${{ github.event.inputs.tag }}"; then
+            echo "❌ Tag ${{ github.event.inputs.tag }} already exists. Aborting."
+            exit 1
+          fi
 
-    - name: Create Release
-      id: create_release
-      uses: actions/create-release@v1
-      env:
-        GITHUB_TOKEN: ${{ secrets.PAT_TOKEN }}
-      with:
-        tag_name: ${{ github.event.inputs.tag }}
-        release_name: XMLUI Launcher ${{ github.event.inputs.tag }}
-        prerelease: ${{ github.event.inputs.prerelease }}
-        body: |
-          # XMLUI Launcher ${{ github.event.inputs.tag }}
+      - name: Create and push tag
+        run: |
+          git config --local user.email "action@github.com"
+          git config --local user.name "GitHub Action"
+          git tag -a ${{ github.event.inputs.tag }} -m "Release ${{ github.event.inputs.tag }}"
+          git push origin ${{ github.event.inputs.tag }}
 
-          ## What's Included
+      - name: Download all artifacts to dist/
+        uses: actions/download-artifact@v4
+        with:
+          name: artifacts
+          path: dist
 
-          - XMLUI Invoice Example App
-          - XMLUI Test Server (platform-specific)
-          - XMLUI Components (docs and source)
-          - XMLUI MCP Binary (platform-specific)
-    - name: Upload Linux build
-      uses: actions/upload-release-asset@v1
-      env:
-        GITHUB_TOKEN: ${{ secrets.PAT_TOKEN }}
-      with:
-        upload_url: ${{ steps.create_release.outputs.upload_url }}
-        asset_path: ./xmlui-launcher-linux-amd64/xmlui-launcher-linux-amd64
-        asset_name: xmlui-launcher-linux-amd64
-        asset_content_type: application/octet-stream
+      - name: Create GitHub release
+        id: create_release
+        uses: actions/create-release@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.PAT_TOKEN }}
+        with:
+          tag_name: ${{ github.event.inputs.tag }}
+          release_name: XMLUI Launcher ${{ github.event.inputs.tag }}
+          prerelease: ${{ github.event.inputs.prerelease }}
+          body: |
+            # XMLUI Launcher ${{ github.event.inputs.tag }}
 
-    - name: Upload macOS AMD64 build
-      uses: actions/upload-release-asset@v1
-      env:
-        GITHUB_TOKEN: ${{ secrets.PAT_TOKEN }}
-      with:
-        upload_url: ${{ steps.create_release.outputs.upload_url }}
-        asset_path: ./xmlui-launcher-macos-amd64/xmlui-launcher-macos-amd64
-        asset_name: xmlui-launcher-macos-amd64
-        asset_content_type: application/octet-stream
+            ## What's Included
 
-    - name: Upload macOS ARM64 build
-      uses: actions/upload-release-asset@v1
-      env:
-        GITHUB_TOKEN: ${{ secrets.PAT_TOKEN }}
-      with:
-        upload_url: ${{ steps.create_release.outputs.upload_url }}
-        asset_path: ./xmlui-launcher-macos-arm64/xmlui-launcher-macos-arm64
-        asset_name: xmlui-launcher-macos-arm64
-        asset_content_type: application/octet-stream
+            - XMLUI Invoice Example App
+            - XMLUI Test Server (platform-specific)
+            - XMLUI Components (docs and source)
+            - XMLUI MCP Binary (platform-specific)
 
-    - name: Upload Windows build
-      uses: actions/upload-release-asset@v1
-      env:
-        GITHUB_TOKEN: ${{ secrets.PAT_TOKEN }}
-      with:
-        upload_url: ${{ steps.create_release.outputs.upload_url }}
-        asset_path: ./xmlui-launcher-windows-amd64/xmlui-launcher-windows-amd64.exe
-        asset_name: xmlui-launcher-windows-amd64.exe
-        asset_content_type: application/octet-stream
-
-    - name: Upload XMLUI components
-      uses: actions/upload-release-asset@v1
-      env:
-        GITHUB_TOKEN: ${{ secrets.PAT_TOKEN }}
-      with:
-        upload_url: ${{ steps.create_release.outputs.upload_url }}
-        asset_path: ./xmlui-components.zip/xmlui-components.zip
-        asset_name: xmlui-components.zip
-        asset_content_type: application/zip
+      - name: Upload all binaries and components
+        run: |
+          for file in dist/*; do
+            echo "Uploading $file"
+            gh release upload ${{ github.event.inputs.tag }} "$file" --clobber
+          done
+        env:
+          GH_TOKEN: ${{ secrets.PAT_TOKEN }}
