@@ -24,22 +24,18 @@ jobs:
             goos: linux
             goarch: amd64
             output: xmlui-launcher-linux-amd64
-            archive: false
           - os: macos-latest
             goos: darwin
             goarch: amd64
             output: xmlui-launcher-macos-amd64
-            archive: false
           - os: macos-latest
             goos: darwin
             goarch: arm64
             output: xmlui-launcher-macos-arm64
-            archive: false
           - os: windows-latest
             goos: windows
             goarch: amd64
             output: xmlui-launcher-windows-amd64.exe
-            archive: true
 
     steps:
       - uses: actions/checkout@v4
@@ -49,41 +45,44 @@ jobs:
         with:
           go-version: '1.21'
 
-      - name: Build
+      - name: Build launcher binary
         env:
           GOOS: ${{ matrix.goos }}
           GOARCH: ${{ matrix.goarch }}
-        run: go build -v -o ${{ matrix.output }} ./xmlui-launcher.go
-
-      - name: Zip Windows binary using PowerShell
-        if: matrix.archive == true
-        shell: pwsh
         run: |
-          Compress-Archive -Path xmlui-launcher-windows-amd64.exe -DestinationPath xmlui-launcher-windows-amd64.zip
+          mkdir -p bundle
+          go build -v -o bundle/${{ matrix.output }} ./xmlui-launcher.go
 
-      - name: Upload artifact (non-Windows)
-        if: matrix.archive == false
+      - name: Add README to bundle
+        run: cp README.md bundle/
+
+      - name: Zip installer bundle
+        shell: bash
+        run: |
+          if [[ "${{ runner.os }}" == "Windows" ]]; then
+            powershell -Command "Compress-Archive -Path bundle\\* -DestinationPath ${{ matrix.output }}.zip"
+          else
+            (cd bundle && zip -r ../${{ matrix.output }}.zip .)
+          fi
+
+      - name: Upload zipped launcher
         uses: actions/upload-artifact@v4
         with:
-          name: ${{ matrix.output }}
-          path: ${{ matrix.output }}
+          name: ${{ matrix.output }}.zip
+          path: ${{ matrix.output }}.zip
 
-      - name: Upload artifact (Windows)
-        if: matrix.archive == true
-        uses: actions/upload-artifact@v4
-        with:
-          name: xmlui-launcher-windows-amd64.zip
-          path: xmlui-launcher-windows-amd64.zip
-
-  package-components:
-    name: Package XMLUI Components
+  create-release:
+    name: Create Release
+    needs: [build]
     runs-on: ubuntu-latest
+
     steps:
-      - uses: actions/checkout@v4
+      - name: Checkout current repo
+        uses: actions/checkout@v4
         with:
           token: ${{ secrets.PAT_TOKEN }}
 
-      - name: Checkout XMLUI repo
+      - name: Clone XMLUI source
         uses: actions/checkout@v4
         with:
           repository: xmlui-com/xmlui
@@ -100,34 +99,16 @@ jobs:
           zip -r ../xmlui-components.zip .
           cd ..
 
-      - name: Upload component package
-        uses: actions/upload-artifact@v4
-        with:
-          name: xmlui-components.zip
-          path: xmlui-components.zip
-
-  create-release:
-    name: Create Release
-    needs: [build, package-components]
-    runs-on: ubuntu-latest
-
-    steps:
-      - uses: actions/checkout@v4
-        with:
-          token: ${{ secrets.PAT_TOKEN }}
-
-      - name: Download all artifacts to dist/
+      - name: Download launcher artifacts
         uses: actions/download-artifact@v4
         with:
           path: dist
 
-      - name: Prepare release assets
+      - name: Collect all release assets
         run: |
           mkdir -p release_assets
-          for path in dist/*/*; do
-            filename=$(basename "$path")
-            cp "$path" "release_assets/$filename"
-          done
+          cp xmlui-components.zip release_assets/
+          find dist -name '*.zip' -exec cp {} release_assets/ \;
 
       - name: Create GitHub release
         uses: softprops/action-gh-release@v2
