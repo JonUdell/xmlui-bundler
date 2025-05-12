@@ -1,10 +1,8 @@
-// xmlui-launcher/main.go
 package main
 
 import (
 	"archive/tar"
 	"archive/zip"
-	"bufio"
 	"bytes"
 	"compress/gzip"
 	"fmt"
@@ -18,10 +16,9 @@ import (
 
 const (
 	repoName           = "xmlui-invoice"
-	defaultDirName     = "xmlui-getting-started"
 	branchName         = "main"
 	appZipURL          = "https://codeload.github.com/jonudell/" + repoName + "/zip/refs/heads/" + branchName
-	xmluiComponentsURL = "https://github.com/jonudell/xmlui-launcher/releases/download/v1.0.0/xmlui-components.zip"
+	xmluiComponentsURL = "https://github.com/jonudell/xmlui-bundler/releases/download/v1.0.0/xmlui-components.zip"
 )
 
 func getPlatformSpecificMCPURL() string {
@@ -58,22 +55,6 @@ func getPlatformSpecificServerURL() string {
 	default:
 		return baseURL + "xmlui-test-server-mac-arm.tar.gz"
 	}
-}
-
-func promptForInstallPath(defaultPath string) string {
-	fmt.Printf("Install app to default location (%s)? [Y/n]: ", defaultPath)
-	scanner := bufio.NewScanner(os.Stdin)
-	scanner.Scan()
-	input := strings.TrimSpace(scanner.Text())
-	if strings.ToLower(input) == "n" {
-		fmt.Print("Enter custom install path: ")
-		scanner.Scan()
-		customPath := strings.TrimSpace(scanner.Text())
-		if customPath != "" {
-			return customPath
-		}
-	}
-	return defaultPath
 }
 
 func downloadWithProgress(url, filename string) ([]byte, error) {
@@ -165,7 +146,6 @@ func ensureExecutable(path string) error {
 func moveIntoPlace(srcParent, repoName, installDir string) (string, error) {
 	repoPrefix := repoName + "-"
 	entries, err := os.ReadDir(srcParent)
-
 	if err != nil {
 		return "", err
 	}
@@ -183,8 +163,7 @@ func moveIntoPlace(srcParent, repoName, installDir string) (string, error) {
 }
 
 func main() {
-	home, _ := os.UserHomeDir()
-	installDir := promptForInstallPath(filepath.Join(home, defaultDirName))
+	installDir, _ := os.Getwd()
 	os.MkdirAll(installDir, 0755)
 
 	fmt.Println("Step 1/5: Downloading XMLUI invoice app...")
@@ -237,7 +216,6 @@ func main() {
 	mcpDir := filepath.Join(installDir, "mcp")
 	os.MkdirAll(mcpDir, 0755)
 
-
 	var expectedFiles []string
 	if runtime.GOOS == "windows" {
 		expectedFiles = []string{"xmlui-mcp.exe", "xmlui-mcp-client.exe", "run-mcp-client.bat"}
@@ -248,19 +226,15 @@ func main() {
 	for _, name := range expectedFiles {
 		src := filepath.Join(tmpMCP, name)
 		dst := filepath.Join(mcpDir, name)
-
 		if err := os.Rename(src, dst); err != nil {
 			fmt.Printf("  Skipping %s (not found?): %v\n", name, err)
 			continue
 		}
-
 		fmt.Printf("  Moved %s to %s\n", name, dst)
-
 		if strings.HasSuffix(name, ".sh") || !strings.HasSuffix(name, ".exe") {
 			_ = ensureExecutable(dst)
 		}
 	}
-
 	_ = os.RemoveAll(tmpMCP)
 
 	fmt.Println("Step 4/5: Downloading XMLUI test server...")
@@ -279,31 +253,8 @@ func main() {
 		fmt.Println("Failed to extract server:", err)
 		os.Exit(1)
 	}
-
 	_ = ensureExecutable(filepath.Join(appDir, "start.sh"))
 
 	fmt.Println("✓ Organized layout complete")
 	fmt.Printf("\nInstall location: %s\n", installDir)
-
-	var script string
-	var cmd *exec.Cmd
-
-	if runtime.GOOS == "windows" {
-		script = filepath.Join(appDir, "start.bat")
-		fmt.Println("Launching server:", script)
-		cmd = exec.Command("cmd", "/C", "start", script)
-	} else {
-		script = filepath.Join(appDir, "start.sh")
-		fmt.Println("Launching server:", script)
-		cmd = exec.Command(script)
-	}
-
-	cmd.Dir = appDir
-	cmd.Stdout = os.Stdout
-	cmd.Stderr = os.Stderr
-	cmd.Stdin = os.Stdin
-	if err := cmd.Run(); err != nil {
-		fmt.Println("Error launching startup script:", err)
-		os.Exit(1)
-	}
 }

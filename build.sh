@@ -1,5 +1,5 @@
 #!/bin/bash
-go build xmlui-launcher.go
-chmod +x xmlui-launcher
+go build xmlui-bundler.go
+chmod +x xmlui-bundler
 
 
