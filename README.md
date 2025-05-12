@@ -1,4 +1,14 @@
-# XMLUI Launcher
+# XMLUI bundler
 
-A cross-platform installer for XMLUI that downloads and sets up all necessary components for getting started with XMLUI development.
+Build platform-specific Getting Started zip files with:
+
+- xmlui-test-server
+
+- xmlui-invoice
+
+- src and doc trees
+
+- mcp client and server
+
+
 
