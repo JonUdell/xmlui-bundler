@@ -7,6 +7,7 @@ import (
 	"compress/gzip"
 	"fmt"
 	"io"
+	"net/http"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -15,10 +16,10 @@ import (
 )
 
 const (
-	repoName           = "xmlui-invoice"
-	branchName         = "main"
-	appZipURL          = "https://codeload.github.com/jonudell/" + repoName + "/zip/refs/heads/" + branchName
-	xmluiComponentsURL = "https://github.com/jonudell/xmlui-bundler/releases/download/v1.0.0/xmlui-components.zip"
+	repoName       = "xmlui-invoice"
+	branchName     = "main"
+	appZipURL      = "https://codeload.github.com/jonudell/" + repoName + "/zip/refs/heads/" + branchName
+	xmluiRepoZip   = "https://codeload.github.com/xmlui-com/xmlui/zip/refs/heads/main"
 )
 
 func getPlatformSpecificMCPURL() string {
@@ -60,15 +61,17 @@ func getPlatformSpecificServerURL() string {
 func downloadWithProgress(url, filename string) ([]byte, error) {
 	fmt.Printf("Downloading %s...\n", filename)
 	fmt.Printf("  From: %s\n", url)
-	cmd := exec.Command("curl", "-L", "-sS", "-#", url)
-	var out bytes.Buffer
-	cmd.Stdout = &out
-	cmd.Stderr = os.Stderr
-	if err := cmd.Run(); err != nil {
-		return nil, fmt.Errorf("curl failed: %w", err)
+	resp, err := http.Get(url)
+	if err != nil {
+		return nil, err
 	}
-	fmt.Printf("  Downloaded: %d bytes\n", out.Len())
-	return out.Bytes(), nil
+	defer resp.Body.Close()
+	data, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, err
+	}
+	fmt.Printf("  Downloaded: %d bytes\n", len(data))
+	return data, nil
 }
 
 func unzipTo(data []byte, dest string) error {
@@ -184,15 +187,29 @@ func main() {
 	}
 
 	fmt.Println("Step 2/5: Downloading XMLUI components...")
-	components, err := downloadWithProgress(xmluiComponentsURL, "XMLUI components")
+	xmluiZip, err := downloadWithProgress(xmluiRepoZip, "XMLUI repo")
 	if err != nil {
-		fmt.Println("Failed to download components:", err)
+		fmt.Println("Failed to download XMLUI source:", err)
 		os.Exit(1)
 	}
-	if err := unzipTo(components, installDir); err != nil {
-		fmt.Println("Failed to extract components:", err)
+	tmpDir := filepath.Join(installDir, "xmlui-source")
+	os.MkdirAll(tmpDir, 0755)
+	if err := unzipTo(xmluiZip, tmpDir); err != nil {
+		fmt.Println("Failed to extract XMLUI source:", err)
 		os.Exit(1)
 	}
+	var sourceRoot string
+	entries, _ := os.ReadDir(tmpDir)
+	for _, e := range entries {
+		if e.IsDir() && strings.HasPrefix(e.Name(), "xmlui-") {
+			sourceRoot = filepath.Join(tmpDir, e.Name())
+			break
+		}
+	}
+	os.MkdirAll(filepath.Join(installDir, "docs", "pages", "components"), 0755)
+	os.MkdirAll(filepath.Join(installDir, "xmlui", "src", "components"), 0755)
+	copyDir(filepath.Join(sourceRoot, "docs", "pages", "components"), filepath.Join(installDir, "docs", "pages", "components"))
+	copyDir(filepath.Join(sourceRoot, "xmlui", "src", "components"), filepath.Join(installDir, "xmlui", "src", "components"))
 	fmt.Println("✓ Extracted components")
 
 	srcFrom := filepath.Join(installDir, "xmlui", "src")
@@ -215,14 +232,12 @@ func main() {
 
 	mcpDir := filepath.Join(installDir, "mcp")
 	os.MkdirAll(mcpDir, 0755)
-
 	var expectedFiles []string
 	if runtime.GOOS == "windows" {
 		expectedFiles = []string{"xmlui-mcp.exe", "xmlui-mcp-client.exe", "run-mcp-client.bat"}
 	} else {
 		expectedFiles = []string{"xmlui-mcp", "xmlui-mcp-client", "run-mcp-client.sh"}
 	}
-
 	for _, name := range expectedFiles {
 		src := filepath.Join(tmpMCP, name)
 		dst := filepath.Join(mcpDir, name)
@@ -257,4 +272,32 @@ func main() {
 
 	fmt.Println("✓ Organized layout complete")
 	fmt.Printf("\nInstall location: %s\n", installDir)
+}
+
+func copyDir(src string, dst string) error {
+	entries, err := os.ReadDir(src)
+	if err != nil {
+		return err
+	}
+	for _, entry := range entries {
+		srcPath := filepath.Join(src, entry.Name())
+		dstPath := filepath.Join(dst, entry.Name())
+		if entry.IsDir() {
+			os.MkdirAll(dstPath, os.ModePerm)
+			copyDir(srcPath, dstPath)
+		} else {
+			in, err := os.Open(srcPath)
+			if err != nil {
+				return err
+			}
+			out, err := os.Create(dstPath)
+			if err != nil {
+				return err
+			}
+			io.Copy(out, in)
+			in.Close()
+			out.Close()
+		}
+	}
+	return nil
 }
