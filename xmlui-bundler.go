@@ -69,7 +69,7 @@ func downloadWithProgress(url, filename string) ([]byte, error) {
 	}
 
 	if strings.Contains(url, "codeload.github.com/xmlui-com/xmlui") {
-		token := os.Getenv("PAT_TOKEN")
+		token := os.Getenv("GITHUB_TOKEN")
 		if token != "" {
 			fmt.Println("  Using authentication token for private repository")
 			req.SetBasicAuth(token, "x-oauth-basic")
