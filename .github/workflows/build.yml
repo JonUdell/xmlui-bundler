@@ -53,8 +53,25 @@ jobs:
           mkdir -p bundle
           go build -v -o bundle/${{ matrix.output }} ./xmlui-launcher.go
 
+      - name: Rename binary to standard name
+        run: |
+          if [[ "${{ runner.os }}" == "Windows" ]]; then
+            mv bundle/${{ matrix.output }} bundle/xmlui-launcher.exe
+          else
+            mv bundle/${{ matrix.output }} bundle/xmlui-launcher
+          fi
+
+      - name: Make executable (and remove quarantine on macOS)
+        if: runner.os != 'Windows'
+        run: |
+          chmod +x bundle/xmlui-launcher
+          if [[ "$(uname)" == "Darwin" ]]; then
+            xattr -d com.apple.quarantine bundle/xmlui-launcher || true
+          fi
+
+
       - name: Add README to bundle
-        run: cp README.md bundle/
+        run: cp XMLUI_GETTING_STARTED_README.md bundle/
 
       - name: Zip installer bundle
         shell: bash

@@ -165,6 +165,7 @@ func ensureExecutable(path string) error {
 func moveIntoPlace(srcParent, repoName, installDir string) (string, error) {
 	repoPrefix := repoName + "-"
 	entries, err := os.ReadDir(srcParent)
+
 	if err != nil {
 		return "", err
 	}
@@ -235,7 +236,16 @@ func main() {
 
 	mcpDir := filepath.Join(installDir, "mcp")
 	os.MkdirAll(mcpDir, 0755)
-	for _, name := range []string{"xmlui-mcp.exe", "xmlui-mcp-client.exe", "run-mcp-client.sh", "run-mcp-client.bat"} {
+
+
+	var expectedFiles []string
+	if runtime.GOOS == "windows" {
+		expectedFiles = []string{"xmlui-mcp.exe", "xmlui-mcp-client.exe", "run-mcp-client.bat"}
+	} else {
+		expectedFiles = []string{"xmlui-mcp", "xmlui-mcp-client", "run-mcp-client.sh"}
+	}
+
+	for _, name := range expectedFiles {
 		src := filepath.Join(tmpMCP, name)
 		dst := filepath.Join(mcpDir, name)
 
