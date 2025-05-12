@@ -326,12 +326,10 @@ func main() {
 	}
 	_ = ensureExecutable(filepath.Join(appDir, "start.sh"))
 
-	// Create a file that lists what should be included in the final package
-	includeList := []string{
-		"xmlui-invoice",
-		"mcp",
-		"XMLUI_GETTING_STARTED_README.md",
-	}
+	// The final bundle should contain only these files/directories:
+	// - xmlui-invoice/  (the invoice app)
+	// - mcp/  (with docs/ and src/ inside it)
+	// - XMLUI_GETTING_STARTED_README.md
 	
 	// Write a cleanup script that will remove files not in the include list
 	if runtime.GOOS == "windows" {
