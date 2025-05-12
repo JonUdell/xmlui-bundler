@@ -70,9 +70,9 @@ jobs:
         run: |
           cd bundle
           if [ "${{ runner.os }}" = "Windows" ]; then
-            ./xmlui-bundler.exe --no-start
+            ./xmlui-bundler.exe
           else
-            ./xmlui-bundler --no-start
+            ./xmlui-bundler
           fi
 
       - name: Add README to bundle

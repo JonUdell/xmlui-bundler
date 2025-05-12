@@ -71,7 +71,10 @@ func downloadWithProgress(url, filename string) ([]byte, error) {
 	if strings.Contains(url, "codeload.github.com/xmlui-com/xmlui") {
 		token := os.Getenv("PAT_TOKEN")
 		if token != "" {
+			fmt.Println("  Using authentication token for private repository")
 			req.SetBasicAuth(token, "x-oauth-basic")
+		} else {
+			fmt.Println("  Warning: No authentication token found for private repository")
 		}
 	}
 
@@ -82,7 +85,10 @@ func downloadWithProgress(url, filename string) ([]byte, error) {
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("request failed: %s", resp.Status)
+		if strings.Contains(url, "codeload.github.com/xmlui-com/xmlui") && resp.StatusCode == http.StatusUnauthorized {
+			return nil, fmt.Errorf("authentication failed for private repository: %s (status: %s) - check PAT_TOKEN", url, resp.Status)
+		}
+		return nil, fmt.Errorf("request failed: %s for URL: %s", resp.Status, url)
 	}
 
 	data, err := io.ReadAll(resp.Body)
