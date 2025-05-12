@@ -24,18 +24,22 @@ jobs:
             goos: linux
             goarch: amd64
             output: xmlui-launcher-linux-amd64
+            archive: false
           - os: macos-latest
             goos: darwin
             goarch: amd64
             output: xmlui-launcher-macos-amd64
+            archive: false
           - os: macos-latest
             goos: darwin
             goarch: arm64
             output: xmlui-launcher-macos-arm64
+            archive: false
           - os: windows-latest
             goos: windows
             goarch: amd64
             output: xmlui-launcher-windows-amd64.exe
+            archive: true
 
     steps:
       - uses: actions/checkout@v4
@@ -51,11 +55,24 @@ jobs:
           GOARCH: ${{ matrix.goarch }}
         run: go build -v -o ${{ matrix.output }} ./xmlui-launcher.go
 
-      - name: Upload artifact
+      - name: Zip Windows binary
+        if: matrix.archive == true
+        run: |
+          zip xmlui-launcher-windows-amd64.zip ${{ matrix.output }}
+
+      - name: Upload artifact (raw binary for non-Windows)
+        if: matrix.archive == false
         uses: actions/upload-artifact@v4
         with:
           name: ${{ matrix.output }}
           path: ${{ matrix.output }}
+
+      - name: Upload artifact (zipped binary for Windows)
+        if: matrix.archive == true
+        uses: actions/upload-artifact@v4
+        with:
+          name: xmlui-launcher-windows-amd64.zip
+          path: xmlui-launcher-windows-amd64.zip
 
   package-components:
     name: Package XMLUI Components
