@@ -61,7 +61,15 @@ func getPlatformSpecificServerURL() string {
 func downloadWithProgress(url, filename string) ([]byte, error) {
 	fmt.Printf("Downloading %s...\n", filename)
 	fmt.Printf("  From: %s\n", url)
-	resp, err := http.Get(url)
+	client := &http.Client{}
+	req, err := http.NewRequest("GET", url, nil)
+	if err != nil {
+		return nil, err
+	}
+	if token := os.Getenv("PAT_TOKEN"); token != "" {
+		req.Header.Set("Authorization", "Bearer "+token)
+	}
+	resp, err := client.Do(req)
 	if err != nil {
 		return nil, err
 	}
