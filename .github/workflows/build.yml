@@ -98,26 +98,24 @@ jobs:
         with:
           token: ${{ secrets.PAT_TOKEN }}
 
-      - name: Create and push tag
-        run: |
-          git config --local user.email "action@github.com"
-          git config --local user.name "GitHub Action"
-          git tag -a ${{ github.event.inputs.tag }} -m "Release ${{ github.event.inputs.tag }}"
-          git push origin ${{ github.event.inputs.tag }}
-
       - name: Download all artifacts to dist/
         uses: actions/download-artifact@v4
         with:
           path: dist
 
+      - name: Prepare release assets
+        run: |
+          mkdir -p release_assets
+          for path in dist/*/*; do
+            filename=$(basename "$path")
+            cp "$path" "release_assets/$filename"
+          done
+
       - name: Create GitHub release
-        id: create_release
-        uses: actions/create-release@v1
-        env:
-          GITHUB_TOKEN: ${{ secrets.PAT_TOKEN }}
+        uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ github.event.inputs.tag }}
-          release_name: XMLUI Launcher ${{ github.event.inputs.tag }}
+          name: XMLUI Launcher ${{ github.event.inputs.tag }}
           prerelease: ${{ github.event.inputs.prerelease }}
           body: |
             # XMLUI Launcher ${{ github.event.inputs.tag }}
@@ -128,13 +126,6 @@ jobs:
             - XMLUI Test Server (platform-specific)
             - XMLUI Components (docs and source)
             - XMLUI MCP Binary (platform-specific)
-
-      - name: Upload release assets
-        run: |
-          for path in dist/*/*; do
-            filename=$(basename "$path")
-            echo "Uploading $filename"
-            gh release upload "${{ github.event.inputs.tag }}" "$path" --clobber --repo "$GITHUB_REPOSITORY"
-          done
+          files: release_assets/*
         env:
-          GH_TOKEN: ${{ secrets.PAT_TOKEN }}
+          GITHUB_TOKEN: ${{ secrets.PAT_TOKEN }}
