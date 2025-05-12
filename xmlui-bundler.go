@@ -16,10 +16,10 @@ import (
 )
 
 const (
-	repoName       = "xmlui-invoice"
-	branchName     = "main"
-	appZipURL      = "https://codeload.github.com/jonudell/" + repoName + "/zip/refs/heads/" + branchName
-	xmluiRepoZip   = "https://github.com/xmlui-com/xmlui/archive/refs/heads/main.zip"
+	repoName     = "xmlui-invoice"
+	branchName   = "main"
+	appZipURL    = "https://codeload.github.com/jonudell/" + repoName + "/zip/refs/heads/" + branchName
+	xmluiRepoZip = "https://codeload.github.com/xmlui-com/xmlui/zip/refs/heads/main"
 )
 
 func getPlatformSpecificMCPURL() string {
@@ -67,7 +67,7 @@ func downloadWithProgress(url, filename string) ([]byte, error) {
 		return nil, err
 	}
 	if token := os.Getenv("PAT_TOKEN"); token != "" {
-		req.Header.Set("Authorization", "Bearer "+token)
+		req.SetBasicAuth(token, "x-oauth-basic")
 	}
 	resp, err := client.Do(req)
 	if err != nil {
@@ -81,6 +81,7 @@ func downloadWithProgress(url, filename string) ([]byte, error) {
 	fmt.Printf("  Downloaded: %d bytes\n", len(data))
 	return data, nil
 }
+
 
 func unzipTo(data []byte, dest string) error {
 	r, err := zip.NewReader(bytes.NewReader(data), int64(len(data)))
