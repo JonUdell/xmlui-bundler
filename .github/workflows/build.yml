@@ -55,19 +55,20 @@ jobs:
           GOARCH: ${{ matrix.goarch }}
         run: go build -v -o ${{ matrix.output }} ./xmlui-launcher.go
 
-      - name: Zip Windows binary
+      - name: Zip Windows binary using PowerShell
         if: matrix.archive == true
+        shell: pwsh
         run: |
-          zip xmlui-launcher-windows-amd64.zip ${{ matrix.output }}
+          Compress-Archive -Path xmlui-launcher-windows-amd64.exe -DestinationPath xmlui-launcher-windows-amd64.zip
 
-      - name: Upload artifact (raw binary for non-Windows)
+      - name: Upload artifact (non-Windows)
         if: matrix.archive == false
         uses: actions/upload-artifact@v4
         with:
           name: ${{ matrix.output }}
           path: ${{ matrix.output }}
 
-      - name: Upload artifact (zipped binary for Windows)
+      - name: Upload artifact (Windows)
         if: matrix.archive == true
         uses: actions/upload-artifact@v4
         with:
