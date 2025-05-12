@@ -268,9 +268,19 @@ func main() {
 	fmt.Println("✓ Organized layout complete")
 	fmt.Printf("\nInstall location: %s\n", installDir)
 
-	script := filepath.Join(appDir, "start.sh")
-	fmt.Println("Launching server:", script)
-	cmd := exec.Command(script)
+	var script string
+	var cmd *exec.Cmd
+
+	if runtime.GOOS == "windows" {
+		script = filepath.Join(appDir, "start.bat")
+		fmt.Println("Launching server:", script)
+		cmd = exec.Command("cmd", "/C", "start", script)
+	} else {
+		script = filepath.Join(appDir, "start.sh")
+		fmt.Println("Launching server:", script)
+		cmd = exec.Command(script)
+	}
+
 	cmd.Dir = appDir
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
