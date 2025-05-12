@@ -41,7 +41,7 @@ jobs:
         with:
           go-version: '1.21'
 
-      - name: Build bundler
+      - name: Build bundle tool
         shell: bash
         env:
           GOOS: ${{ matrix.goos }}
@@ -71,8 +71,10 @@ jobs:
           cd bundle
           if [ "${{ runner.os }}" = "Windows" ]; then
             ./xmlui-bundler.exe
+            ./cleanup.bat
           else
             ./xmlui-bundler
+            ./cleanup.sh
           fi
 
       - name: Add README to bundle
@@ -83,16 +85,16 @@ jobs:
         shell: bash
         run: |
           if [ "${{ runner.os }}" = "Windows" ]; then
-            powershell -Command "Compress-Archive -Path bundle\\* -DestinationPath xmlui-bundler-windows-amd64.zip"
+            powershell -Command "Compress-Archive -Path bundle\* -DestinationPath xmlui-bundle-windows-amd64.zip"
           else
-            (cd bundle && zip -r ../xmlui-bundler-${{ matrix.goos }}-${{ matrix.goarch }}.zip .)
+            (cd bundle && zip -r ../xmlui-bundle-${{ matrix.goos }}-${{ matrix.goarch }}.zip .)
           fi
 
       - name: Upload zipped bundle
         uses: actions/upload-artifact@v4
         with:
-          name: xmlui-bundler-${{ matrix.goos }}-${{ matrix.goarch }}.zip
-          path: xmlui-bundler-${{ matrix.goos }}-${{ matrix.goarch }}.zip
+          name: xmlui-bundle-${{ matrix.goos }}-${{ matrix.goarch }}.zip
+          path: xmlui-bundle-${{ matrix.goos }}-${{ matrix.goarch }}.zip
 
   create-release:
     name: Create Release
@@ -119,7 +121,7 @@ jobs:
           cp -r xmlui-source/xmlui/src/components/* xmlui-components/xmlui/src/components/
           (cd xmlui-components && zip -r ../xmlui-components.zip .)
 
-      - name: Download launcher zips
+      - name: Download bundle zips
         uses: actions/download-artifact@v4
         with:
           path: dist
@@ -134,7 +136,7 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ github.event.inputs.tag }}
-          name: XMLUI Launcher ${{ github.event.inputs.tag }}
+          name: XMLUI Bundle ${{ github.event.inputs.tag }}
           prerelease: ${{ github.event.inputs.prerelease }}
           files: release_assets/*
         env:

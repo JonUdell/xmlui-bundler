@@ -167,7 +167,17 @@ func ensureExecutable(path string) error {
 		return err
 	}
 	if runtime.GOOS == "darwin" {
-		exec.Command("xattr", "-d", "com.apple.quarantine", path).Run()
+		cmd := exec.Command("xattr", "-d", "com.apple.quarantine", path)
+		cmd.Run() // Ignore errors, as file might not have quarantine attribute
+		
+		// Verify quarantine was removed or never existed
+		verifyCmd := exec.Command("xattr", "-l", path)
+		output, _ := verifyCmd.CombinedOutput()
+		if strings.Contains(string(output), "com.apple.quarantine") {
+			fmt.Printf("  Warning: Quarantine could not be removed from %s\n", path)
+		} else {
+			fmt.Printf("  Quarantine removed or not present on %s\n", path)
+		}
 	}
 	return nil
 }
@@ -316,14 +326,31 @@ func main() {
 	}
 	_ = ensureExecutable(filepath.Join(appDir, "start.sh"))
 
-	// Remove the bundler executable from the output directory if possible
-	selfPath, _ := os.Executable()
-	if filepath.Base(selfPath) == "xmlui-bundler" || filepath.Base(selfPath) == "xmlui-bundler.exe" {
-		// Only remove if the current executable is in the install directory
-		if strings.HasPrefix(selfPath, installDir) {
-			// This is a deferred removal because we can't remove our own executable while running
-			fmt.Println("Note: bundler executable will not be included in the final package")
-		}
+	// Create a file that lists what should be included in the final package
+	includeList := []string{
+		"xmlui-invoice",
+		"mcp",
+		"XMLUI_GETTING_STARTED_README.md",
+	}
+	
+	// Write a cleanup script that will remove files not in the include list
+	if runtime.GOOS == "windows" {
+		cleanupScript := "@echo off\r\n"
+		cleanupScript += "echo Cleaning up temporary files...\r\n"
+		cleanupScript += fmt.Sprintf("del %s\r\n", filepath.Base(os.Args[0]))
+		cleanupScript += "del *.zip\r\n"
+		cleanupScript += "del cleanup.bat\r\n"
+		os.WriteFile(filepath.Join(installDir, "cleanup.bat"), []byte(cleanupScript), 0755)
+		fmt.Println("Note: Run cleanup.bat to remove the bundler executable and temporary files")
+	} else {
+		cleanupScript := "#!/bin/sh\n"
+		cleanupScript += "echo Cleaning up temporary files...\n"
+		cleanupScript += fmt.Sprintf("rm -f \"%s\"\n", filepath.Base(os.Args[0]))
+		cleanupScript += "rm -f *.zip\n"
+		cleanupScript += "rm -f cleanup.sh\n"
+		os.WriteFile(filepath.Join(installDir, "cleanup.sh"), []byte(cleanupScript), 0755)
+		ensureExecutable(filepath.Join(installDir, "cleanup.sh"))
+		fmt.Println("Note: Run ./cleanup.sh to remove the bundler executable and temporary files")
 	}
 
 	fmt.Println("✓ Organized layout complete")

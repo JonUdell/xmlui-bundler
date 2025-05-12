@@ -1,14 +1,6 @@
-# XMLUI bundler
+# XMLUI Starter Kit
 
-Build platform-specific Getting Started zip files with:
-
-- xmlui-test-server
-
-- xmlui-invoice
-
-- src and doc trees
-
-- mcp client and server
+Welcome to the XMLUI starter kit. Here is the layout:
 
 
 
