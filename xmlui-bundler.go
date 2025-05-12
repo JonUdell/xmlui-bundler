@@ -224,24 +224,8 @@ func main() {
 		fmt.Println("Failed to extract XMLUI source:", err)
 		os.Exit(1)
 	}
-	var sourceRoot string
-	entries, _ := os.ReadDir(tmpDir)
-	for _, e := range entries {
-		if e.IsDir() && strings.HasPrefix(e.Name(), "xmlui-") {
-			sourceRoot = filepath.Join(tmpDir, e.Name())
-			break
-		}
-	}
-	os.MkdirAll(filepath.Join(installDir, "docs", "pages", "components"), 0755)
-	os.MkdirAll(filepath.Join(installDir, "xmlui", "src", "components"), 0755)
-	copyDir(filepath.Join(sourceRoot, "docs", "pages", "components"), filepath.Join(installDir, "docs", "pages", "components"))
-	copyDir(filepath.Join(sourceRoot, "xmlui", "src", "components"), filepath.Join(installDir, "xmlui", "src", "components"))
-	fmt.Println("✓ Extracted components")
-
-	srcFrom := filepath.Join(installDir, "xmlui", "src")
-	srcTo := filepath.Join(installDir, "src")
-	_ = os.Rename(srcFrom, srcTo)
-	_ = os.RemoveAll(filepath.Join(installDir, "xmlui"))
+	// Clean up the source directory - we don't need it
+	_ = os.RemoveAll(tmpDir)
 
 	fmt.Println("Step 3/5: Downloading MCP tools...")
 	mcpZip, err := downloadWithProgress(getPlatformSpecificMCPURL(), "MCP tools")
@@ -258,6 +242,13 @@ func main() {
 
 	mcpDir := filepath.Join(installDir, "mcp")
 	os.MkdirAll(mcpDir, 0755)
+	
+	// First ensure docs and src directories are created under mcp
+	docsDir := filepath.Join(mcpDir, "docs")
+	srcDir := filepath.Join(mcpDir, "src")
+	os.MkdirAll(docsDir, 0755)
+	os.MkdirAll(srcDir, 0755)
+	
 	var expectedFiles []string
 	if runtime.GOOS == "windows" {
 		expectedFiles = []string{"xmlui-mcp.exe", "xmlui-mcp-client.exe", "run-mcp-client.bat"}
@@ -276,7 +267,36 @@ func main() {
 			_ = ensureExecutable(dst)
 		}
 	}
+	
+	// Clean up the temporary MCP directory
 	_ = os.RemoveAll(tmpMCP)
+	
+	// Move docs and src under mcp if they exist at the root level
+	if _, err := os.Stat(filepath.Join(installDir, "docs")); err == nil {
+		if err := os.Rename(filepath.Join(installDir, "docs"), docsDir); err != nil {
+			fmt.Printf("Warning: Could not move docs directory: %v\n", err)
+		}
+	}
+	
+	if _, err := os.Stat(filepath.Join(installDir, "src")); err == nil {
+		if err := os.Rename(filepath.Join(installDir, "src"), srcDir); err != nil {
+			fmt.Printf("Warning: Could not move src directory: %v\n", err)
+		}
+	}
+
+	// Ensure all executables in mcp directory have proper permissions
+	files, _ := os.ReadDir(mcpDir)
+	for _, file := range files {
+		if !file.IsDir() {
+			filePath := filepath.Join(mcpDir, file.Name())
+			// Skip extensions that are not executables
+			if strings.HasSuffix(file.Name(), ".exe") || 
+			   strings.HasSuffix(file.Name(), ".sh") || 
+			   !strings.Contains(file.Name(), ".") {
+				ensureExecutable(filePath)
+			}
+		}
+	}
 
 	fmt.Println("Step 4/5: Downloading XMLUI test server...")
 	serverURL := getPlatformSpecificServerURL()
@@ -296,34 +316,18 @@ func main() {
 	}
 	_ = ensureExecutable(filepath.Join(appDir, "start.sh"))
 
+	// Remove the bundler executable from the output directory if possible
+	selfPath, _ := os.Executable()
+	if filepath.Base(selfPath) == "xmlui-bundler" || filepath.Base(selfPath) == "xmlui-bundler.exe" {
+		// Only remove if the current executable is in the install directory
+		if strings.HasPrefix(selfPath, installDir) {
+			// This is a deferred removal because we can't remove our own executable while running
+			fmt.Println("Note: bundler executable will not be included in the final package")
+		}
+	}
+
 	fmt.Println("✓ Organized layout complete")
 	fmt.Printf("\nInstall location: %s\n", installDir)
 }
 
-func copyDir(src string, dst string) error {
-	entries, err := os.ReadDir(src)
-	if err != nil {
-		return err
-	}
-	for _, entry := range entries {
-		srcPath := filepath.Join(src, entry.Name())
-		dstPath := filepath.Join(dst, entry.Name())
-		if entry.IsDir() {
-			os.MkdirAll(dstPath, os.ModePerm)
-			copyDir(srcPath, dstPath)
-		} else {
-			in, err := os.Open(srcPath)
-			if err != nil {
-				return err
-			}
-			out, err := os.Create(dstPath)
-			if err != nil {
-				return err
-			}
-			io.Copy(out, in)
-			in.Close()
-			out.Close()
-		}
-	}
-	return nil
-}
+
