@@ -54,8 +54,9 @@ jobs:
           go build -v -o bundle/${{ matrix.output }} ./xmlui-launcher.go
 
       - name: Rename binary to standard name
+        shell: bash
         run: |
-          if [[ "${{ runner.os }}" == "Windows" ]]; then
+          if [ "${{ runner.os }}" = "Windows" ]; then
             mv bundle/${{ matrix.output }} bundle/xmlui-launcher.exe
           else
             mv bundle/${{ matrix.output }} bundle/xmlui-launcher
@@ -63,20 +64,21 @@ jobs:
 
       - name: Make executable (and remove quarantine on macOS)
         if: runner.os != 'Windows'
+        shell: bash
         run: |
           chmod +x bundle/xmlui-launcher
-          if [[ "$(uname)" == "Darwin" ]]; then
+          if [ "$(uname)" = "Darwin" ]; then
             xattr -d com.apple.quarantine bundle/xmlui-launcher || true
           fi
 
-
       - name: Add README to bundle
+        shell: bash
         run: cp XMLUI_GETTING_STARTED_README.md bundle/
 
       - name: Zip installer bundle
         shell: bash
         run: |
-          if [[ "${{ runner.os }}" == "Windows" ]]; then
+          if [ "${{ runner.os }}" = "Windows" ]; then
             powershell -Command "Compress-Archive -Path bundle\\* -DestinationPath ${{ matrix.output }}.zip"
           else
             (cd bundle && zip -r ../${{ matrix.output }}.zip .)
