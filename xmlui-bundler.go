@@ -19,7 +19,7 @@ const (
 	repoName     = "xmlui-invoice"
 	branchName   = "main"
 	appZipURL    = "https://codeload.github.com/jonudell/" + repoName + "/zip/refs/heads/" + branchName
-	xmluiRepoZip = "https://api.github.com/repos/xmlui-com/xmlui/zipball/refs/heads/main"
+	xmluiRepoZip = "https://codeload.github.com/xmlui-com/xmlui/zip/refs/heads/main"
 )
 
 func getPlatformSpecificMCPURL() string {
@@ -68,9 +68,10 @@ func downloadWithProgress(url, filename string) ([]byte, error) {
 		return nil, err
 	}
 
-	if strings.Contains(url, "api.github.com/repos/xmlui-com/xmlui") {
-		if token := os.Getenv("PAT_TOKEN"); token != "" {
-			req.Header.Set("Authorization", "Bearer "+token)
+	if strings.Contains(url, "codeload.github.com/xmlui-com/xmlui") {
+		token := os.Getenv("PAT_TOKEN")
+		if token != "" {
+			req.SetBasicAuth(token, "x-oauth-basic")
 		}
 	}
 
