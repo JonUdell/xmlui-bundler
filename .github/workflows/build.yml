@@ -98,13 +98,6 @@ jobs:
         with:
           token: ${{ secrets.PAT_TOKEN }}
 
-      - name: Check for existing tag
-        run: |
-          if git ls-remote --tags origin | grep -q "refs/tags/${{ github.event.inputs.tag }}"; then
-            echo "❌ Tag ${{ github.event.inputs.tag }} already exists. Aborting."
-            exit 1
-          fi
-
       - name: Create and push tag
         run: |
           git config --local user.email "action@github.com"
