@@ -233,13 +233,50 @@ func main() {
 		fmt.Println("Failed to download XMLUI source:", err)
 		os.Exit(1)
 	}
+	// Extract XMLUI components and place them in the mcp/docs and mcp/src directories
 	tmpDir := filepath.Join(installDir, "xmlui-source")
 	os.MkdirAll(tmpDir, 0755)
 	if err := unzipTo(xmluiZip, tmpDir); err != nil {
 		fmt.Println("Failed to extract XMLUI source:", err)
 		os.Exit(1)
 	}
-	// Clean up the source directory - we don't need it
+	
+	// Find the root of the extracted XMLUI source
+	var sourceRoot string
+	entries, _ := os.ReadDir(tmpDir)
+	for _, e := range entries {
+		if e.IsDir() && strings.HasPrefix(e.Name(), "xmlui-") {
+			sourceRoot = filepath.Join(tmpDir, e.Name())
+			break
+		}
+	}
+	
+	// Setup mcp dir with docs and src
+	mcpDir := filepath.Join(installDir, "mcp")
+	os.MkdirAll(mcpDir, 0755)
+	
+	// First ensure docs and src directories are created under mcp
+	docsDir := filepath.Join(mcpDir, "docs")
+	srcDir := filepath.Join(mcpDir, "src")
+	os.MkdirAll(docsDir, 0755)
+	os.MkdirAll(srcDir, 0755)
+	
+	// Copy components
+	if sourceRoot != "" {
+		// Set up components directories
+		os.MkdirAll(filepath.Join(docsDir, "pages", "components"), 0755)
+		os.MkdirAll(filepath.Join(srcDir, "components"), 0755)
+		
+		// Copy component docs
+		copyFiles(filepath.Join(sourceRoot, "docs", "pages", "components"), filepath.Join(docsDir, "pages", "components"))
+		
+		// Copy component source
+		copyFiles(filepath.Join(sourceRoot, "xmlui", "src", "components"), filepath.Join(srcDir, "components"))
+		
+		fmt.Println("✓ Extracted components")
+	}
+	
+	// Clean up the source directory
 	_ = os.RemoveAll(tmpDir)
 
 	fmt.Println("Step 3/5: Downloading MCP tools...")
@@ -254,15 +291,6 @@ func main() {
 		fmt.Println("Failed to extract MCP tools:", err)
 		os.Exit(1)
 	}
-
-	mcpDir := filepath.Join(installDir, "mcp")
-	os.MkdirAll(mcpDir, 0755)
-	
-	// First ensure docs and src directories are created under mcp
-	docsDir := filepath.Join(mcpDir, "docs")
-	srcDir := filepath.Join(mcpDir, "src")
-	os.MkdirAll(docsDir, 0755)
-	os.MkdirAll(srcDir, 0755)
 	
 	var expectedFiles []string
 	if runtime.GOOS == "windows" {
@@ -358,6 +386,39 @@ func main() {
 
 	fmt.Println("✓ Organized layout complete")
 	fmt.Printf("\nInstall location: %s\n", installDir)
+}
+
+// copyFiles recursively copies files from src to dst directory
+func copyFiles(src, dst string) error {
+	entries, err := os.ReadDir(src)
+	if err != nil {
+		return err
+	}
+	
+	for _, entry := range entries {
+		srcPath := filepath.Join(src, entry.Name())
+		dstPath := filepath.Join(dst, entry.Name())
+		
+		if entry.IsDir() {
+			os.MkdirAll(dstPath, 0755)
+			if err := copyFiles(srcPath, dstPath); err != nil {
+				return err
+			}
+		} else {
+			// Copy the file
+			data, err := os.ReadFile(srcPath)
+			if err != nil {
+				return err
+			}
+			
+			err = os.WriteFile(dstPath, data, 0644)
+			if err != nil {
+				return err
+			}
+		}
+	}
+	
+	return nil
 }
 
 
