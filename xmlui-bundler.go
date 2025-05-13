@@ -28,15 +28,15 @@ func getPlatformSpecificMCPURL() string {
 	switch runtime.GOOS {
 	case "darwin":
 		if arch == "arm64" {
-			return baseURL + "xmlui-mcp-mac-arm.zip"
+			return baseURL + "xmlui-mcp-mac-arm.tar.gz"
 		}
-		return baseURL + "xmlui-mcp-mac-amd.zip"
+		return baseURL + "xmlui-mcp-mac-amd.tar.gz"
 	case "linux":
 		return baseURL + "xmlui-mcp-linux-amd64.zip"
 	case "windows":
 		return baseURL + "xmlui-mcp-windows-amd64.zip"
 	default:
-		return baseURL + "xmlui-mcp-mac-arm.zip"
+		return baseURL + "xmlui-mcp-mac-arm.tar.gz"
 	}
 }
 
@@ -99,7 +99,6 @@ func downloadWithProgress(url, filename string) ([]byte, error) {
 	return data, nil
 }
 
-
 func unzipTo(data []byte, dest string) error {
 	r, err := zip.NewReader(bytes.NewReader(data), int64(len(data)))
 	if err != nil {
@@ -155,14 +154,13 @@ func untarGzTo(data []byte, dest string) error {
 			return err
 		}
 		out.Close()
-		
-		// Set executable bit for script files
-		if strings.HasSuffix(fpath, ".sh") {
+
+		// Set executable bit for script files and binaries
+		if strings.HasSuffix(fpath, ".sh") || filepath.Base(fpath) == "xmlui-mcp" ||
+		   filepath.Base(fpath) == "xmlui-mcp-client" || filepath.Base(fpath) == "xmlui-test-server" {
 			os.Chmod(fpath, 0755)
-			// Remove quarantine on macOS
-			if runtime.GOOS == "darwin" {
-				exec.Command("xattr", "-d", "com.apple.quarantine", fpath).Run()
-			}
+			// Note: No need to remove quarantine on macOS for tar.gz files
+			// as the attribute won't be set on extraction
 		}
 	}
 	return nil
@@ -221,7 +219,7 @@ func main() {
 		fmt.Println("Failed to extract XMLUI source:", err)
 		os.Exit(1)
 	}
-	
+
 	// Find the root of the extracted XMLUI source
 	var sourceRoot string
 	entries, _ := os.ReadDir(tmpDir)
@@ -231,54 +229,65 @@ func main() {
 			break
 		}
 	}
-	
+
 	// Setup mcp dir with docs and src
 	mcpDir := filepath.Join(installDir, "mcp")
 	os.MkdirAll(mcpDir, 0755)
-	
+
 	// First ensure docs and src directories are created under mcp
 	docsDir := filepath.Join(mcpDir, "docs")
 	srcDir := filepath.Join(mcpDir, "src")
 	os.MkdirAll(docsDir, 0755)
 	os.MkdirAll(srcDir, 0755)
-	
+
 	// Copy components
 	if sourceRoot != "" {
 		// Set up components directories
 		os.MkdirAll(filepath.Join(docsDir, "pages", "components"), 0755)
 		os.MkdirAll(filepath.Join(srcDir, "components"), 0755)
-		
+
 		// Copy component docs
 		copyFiles(filepath.Join(sourceRoot, "docs", "pages", "components"), filepath.Join(docsDir, "pages", "components"))
-		
+
 		// Copy component source
 		copyFiles(filepath.Join(sourceRoot, "xmlui", "src", "components"), filepath.Join(srcDir, "components"))
-		
+
 		fmt.Println("✓ Extracted components")
 	}
-	
+
 	// Clean up the source directory
 	_ = os.RemoveAll(tmpDir)
 
 	fmt.Println("Step 3/5: Downloading MCP tools...")
-	mcpZip, err := downloadWithProgress(getPlatformSpecificMCPURL(), "MCP tools")
+	mcpUrl := getPlatformSpecificMCPURL()
+	mcpArchive, err := downloadWithProgress(mcpUrl, "MCP tools")
 	if err != nil {
 		fmt.Println("Failed to download MCP tools:", err)
 		os.Exit(1)
 	}
+
 	tmpMCP := filepath.Join(installDir, "mcpTmp")
 	os.MkdirAll(tmpMCP, 0755)
-	if err := unzipTo(mcpZip, tmpMCP); err != nil {
+
+	// Extract based on file type
+	if strings.HasSuffix(mcpUrl, ".zip") {
+		err = unzipTo(mcpArchive, tmpMCP)
+	} else {
+		err = untarGzTo(mcpArchive, tmpMCP)
+	}
+
+	if err != nil {
 		fmt.Println("Failed to extract MCP tools:", err)
 		os.Exit(1)
 	}
-	
+
 	var expectedFiles []string
 	if runtime.GOOS == "windows" {
 		expectedFiles = []string{"xmlui-mcp.exe", "xmlui-mcp-client.exe", "run-mcp-client.bat"}
 	} else {
 		expectedFiles = []string{"xmlui-mcp", "xmlui-mcp-client", "run-mcp-client.sh"}
 	}
+
 	for _, name := range expectedFiles {
 		src := filepath.Join(tmpMCP, name)
 		dst := filepath.Join(mcpDir, name)
@@ -287,53 +296,28 @@ func main() {
 			continue
 		}
 		fmt.Printf("  Moved %s to %s\n", name, dst)
-		if strings.HasSuffix(name, ".sh") || !strings.HasSuffix(name, ".exe") {
-			// Set executable permission for non-Windows executables
+
+		// Set executable permission for non-Windows executables
+		if runtime.GOOS != "windows" && (strings.HasSuffix(name, ".sh") || !strings.Contains(name, ".")) {
 			os.Chmod(dst, 0755)
-			// Remove quarantine on macOS
-			if runtime.GOOS == "darwin" {
-				exec.Command("xattr", "-d", "com.apple.quarantine", dst).Run()
-			}
 		}
 	}
-	
+
 	// Clean up the temporary MCP directory
 	_ = os.RemoveAll(tmpMCP)
-	
+
 	// Move docs and src under mcp if they exist at the root level
 	if _, err := os.Stat(filepath.Join(installDir, "docs")); err == nil {
 		if err := os.Rename(filepath.Join(installDir, "docs"), docsDir); err != nil {
 			fmt.Printf("Warning: Could not move docs directory: %v\n", err)
 		}
 	}
-	
+
 	if _, err := os.Stat(filepath.Join(installDir, "src")); err == nil {
 		if err := os.Rename(filepath.Join(installDir, "src"), srcDir); err != nil {
 			fmt.Printf("Warning: Could not move src directory: %v\n", err)
 		}
 	}
-
-	// Apply the same executable and quarantine removal logic that worked for the test server
-	if runtime.GOOS == "darwin" {
-		// Focus only on the two MCP binaries that need quarantine removal
-		xmluiMcpPath := filepath.Join(mcpDir, "xmlui-mcp")
-		xmluiMcpClientPath := filepath.Join(mcpDir, "xmlui-mcp-client")
-		
-		// Set the executable permission
-		os.Chmod(xmluiMcpPath, 0755)
-		os.Chmod(xmluiMcpClientPath, 0755)
-		
-		// Remove quarantine attribute using the same method that works for the test server
-		fmt.Println("Removing quarantine for MCP binaries...")
-		exec.Command("xattr", "-d", "com.apple.quarantine", xmluiMcpPath).Run()
-		exec.Command("xattr", "-d", "com.apple.quarantine", xmluiMcpClientPath).Run()
-	} else if runtime.GOOS == "linux" {
-		// Set executable permission for Linux binaries
-		os.Chmod(filepath.Join(mcpDir, "xmlui-mcp"), 0755)
-		os.Chmod(filepath.Join(mcpDir, "xmlui-mcp-client"), 0755)
-		os.Chmod(filepath.Join(mcpDir, "run-mcp-client.sh"), 0755)
-	}
-	// Windows executables already have the right permissions
 
 	fmt.Println("Step 4/5: Downloading XMLUI test server...")
 	serverURL := getPlatformSpecificServerURL()
@@ -342,27 +326,29 @@ func main() {
 		fmt.Println("Failed to download server:", err)
 		os.Exit(1)
 	}
+
 	if strings.HasSuffix(serverURL, ".zip") {
 		err = unzipTo(serverArchive, appDir)
 	} else {
 		err = untarGzTo(serverArchive, appDir)
 	}
+
 	if err != nil {
 		fmt.Println("Failed to extract server:", err)
 		os.Exit(1)
 	}
-	// Set executable permission and remove quarantine for start.sh
+
+	// Set executable permission for start.sh
 	startScriptPath := filepath.Join(appDir, "start.sh")
-	os.Chmod(startScriptPath, 0755)
-	if runtime.GOOS == "darwin" {
-		exec.Command("xattr", "-d", "com.apple.quarantine", startScriptPath).Run()
+	if runtime.GOOS != "windows" {
+		os.Chmod(startScriptPath, 0755)
 	}
 
 	// The final bundle should contain only these files/directories:
 	// - xmlui-invoice/  (the invoice app)
 	// - mcp/  (with docs/ and src/ inside it)
 	// - XMLUI_GETTING_STARTED_README.md
-	
+
 	// Write a cleanup script that will remove files not in the include list
 	if runtime.GOOS == "windows" {
 		cleanupScript := "@echo off\r\n"
@@ -377,6 +363,7 @@ func main() {
 		cleanupScript += "echo Cleaning up temporary files...\n"
 		cleanupScript += fmt.Sprintf("rm -f \"%s\"\n", filepath.Base(os.Args[0]))
 		cleanupScript += "rm -f *.zip\n"
+		cleanupScript += "rm -f *.tar.gz\n"
 		cleanupScript += "rm -f cleanup.sh\n"
 		os.WriteFile(filepath.Join(installDir, "cleanup.sh"), []byte(cleanupScript), 0755)
 		os.Chmod(filepath.Join(installDir, "cleanup.sh"), 0755)
@@ -393,11 +380,11 @@ func copyFiles(src, dst string) error {
 	if err != nil {
 		return err
 	}
-	
+
 	for _, entry := range entries {
 		srcPath := filepath.Join(src, entry.Name())
 		dstPath := filepath.Join(dst, entry.Name())
-		
+
 		if entry.IsDir() {
 			os.MkdirAll(dstPath, 0755)
 			if err := copyFiles(srcPath, dstPath); err != nil {
@@ -409,13 +396,13 @@ func copyFiles(src, dst string) error {
 			if err != nil {
 				return err
 			}
-			
+
 			err = os.WriteFile(dstPath, data, 0644)
 			if err != nil {
 				return err
 			}
 		}
 	}
-	
+
 	return nil
 }
