@@ -131,7 +131,6 @@ jobs:
       - name: Prepare release assets
         run: |
           mkdir -p release_assets
-          cp xmlui-components.zip release_assets/
           find dist -name '*.zip' -exec cp {} release_assets/ \;
 
       - name: Create GitHub release
