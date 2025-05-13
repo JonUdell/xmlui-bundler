@@ -168,8 +168,6 @@ func untarGzTo(data []byte, dest string) error {
 	return nil
 }
 
-
-
 func moveIntoPlace(srcParent, repoName, installDir string) (string, error) {
 	repoPrefix := repoName + "-"
 	entries, err := os.ReadDir(srcParent)
@@ -290,7 +288,12 @@ func main() {
 		}
 		fmt.Printf("  Moved %s to %s\n", name, dst)
 		if strings.HasSuffix(name, ".sh") || !strings.HasSuffix(name, ".exe") {
-			_ = ensureExecutable(dst)
+			// Set executable permission for non-Windows executables
+			os.Chmod(dst, 0755)
+			// Remove quarantine on macOS
+			if runtime.GOOS == "darwin" {
+				exec.Command("xattr", "-d", "com.apple.quarantine", dst).Run()
+			}
 		}
 	}
 	
@@ -416,5 +419,3 @@ func copyFiles(src, dst string) error {
 	
 	return nil
 }
-
-
