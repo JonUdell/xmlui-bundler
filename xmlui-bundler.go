@@ -167,8 +167,13 @@ func ensureExecutable(path string) error {
 		return err
 	}
 	if runtime.GOOS == "darwin" {
+		// Try method 1: Remove specific attribute
 		cmd := exec.Command("xattr", "-d", "com.apple.quarantine", path)
-		cmd.Run() // Ignore errors, as file might not have quarantine attribute
+		cmd.Run() // Ignore errors
+		
+		// Try method 2: Clear all attributes (more aggressive approach)
+		cmd = exec.Command("xattr", "-c", path)
+		cmd.Run() // Ignore errors
 		
 		// Verify quarantine was removed or never existed
 		verifyCmd := exec.Command("xattr", "-l", path)
