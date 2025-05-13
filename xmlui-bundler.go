@@ -284,7 +284,7 @@ func main() {
 	if runtime.GOOS == "windows" {
 		expectedFiles = []string{"xmlui-mcp.exe", "xmlui-mcp-client.exe", "run-mcp-client.bat"}
 	} else {
-		expectedFiles = []string{"xmlui-mcp", "xmlui-mcp-client", "run-mcp-client.sh"}
+		expectedFiles = []string{"xmlui-mcp", "xmlui-mcp-client", "prepare-binaries.sh", "run-mcp-client.sh"}
 	}
 
 	for _, name := range expectedFiles {
