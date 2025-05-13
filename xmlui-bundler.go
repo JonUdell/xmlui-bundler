@@ -155,37 +155,20 @@ func untarGzTo(data []byte, dest string) error {
 			return err
 		}
 		out.Close()
-		if err := ensureExecutable(fpath); err != nil {
-			return err
+		
+		// Set executable bit for script files
+		if strings.HasSuffix(fpath, ".sh") {
+			os.Chmod(fpath, 0755)
+			// Remove quarantine on macOS
+			if runtime.GOOS == "darwin" {
+				exec.Command("xattr", "-d", "com.apple.quarantine", fpath).Run()
+			}
 		}
 	}
 	return nil
 }
 
-func ensureExecutable(path string) error {
-	if err := os.Chmod(path, 0755); err != nil {
-		return err
-	}
-	if runtime.GOOS == "darwin" {
-		// Try method 1: Remove specific attribute
-		cmd := exec.Command("xattr", "-d", "com.apple.quarantine", path)
-		cmd.Run() // Ignore errors
-		
-		// Try method 2: Clear all attributes (more aggressive approach)
-		cmd = exec.Command("xattr", "-c", path)
-		cmd.Run() // Ignore errors
-		
-		// Verify quarantine was removed or never existed
-		verifyCmd := exec.Command("xattr", "-l", path)
-		output, _ := verifyCmd.CombinedOutput()
-		if strings.Contains(string(output), "com.apple.quarantine") {
-			fmt.Printf("  Warning: Quarantine could not be removed from %s\n", path)
-		} else {
-			fmt.Printf("  Quarantine removed or not present on %s\n", path)
-		}
-	}
-	return nil
-}
+
 
 func moveIntoPlace(srcParent, repoName, installDir string) (string, error) {
 	repoPrefix := repoName + "-"
@@ -327,19 +310,27 @@ func main() {
 		}
 	}
 
-	// Ensure all executables in mcp directory have proper permissions
-	files, _ := os.ReadDir(mcpDir)
-	for _, file := range files {
-		if !file.IsDir() {
-			filePath := filepath.Join(mcpDir, file.Name())
-			// Skip extensions that are not executables
-			if strings.HasSuffix(file.Name(), ".exe") || 
-			   strings.HasSuffix(file.Name(), ".sh") || 
-			   !strings.Contains(file.Name(), ".") {
-				ensureExecutable(filePath)
-			}
-		}
+	// Apply the same executable and quarantine removal logic that worked for the test server
+	if runtime.GOOS == "darwin" {
+		// Focus only on the two MCP binaries that need quarantine removal
+		xmluiMcpPath := filepath.Join(mcpDir, "xmlui-mcp")
+		xmluiMcpClientPath := filepath.Join(mcpDir, "xmlui-mcp-client")
+		
+		// Set the executable permission
+		os.Chmod(xmluiMcpPath, 0755)
+		os.Chmod(xmluiMcpClientPath, 0755)
+		
+		// Remove quarantine attribute using the same method that works for the test server
+		fmt.Println("Removing quarantine for MCP binaries...")
+		exec.Command("xattr", "-d", "com.apple.quarantine", xmluiMcpPath).Run()
+		exec.Command("xattr", "-d", "com.apple.quarantine", xmluiMcpClientPath).Run()
+	} else if runtime.GOOS == "linux" {
+		// Set executable permission for Linux binaries
+		os.Chmod(filepath.Join(mcpDir, "xmlui-mcp"), 0755)
+		os.Chmod(filepath.Join(mcpDir, "xmlui-mcp-client"), 0755)
+		os.Chmod(filepath.Join(mcpDir, "run-mcp-client.sh"), 0755)
 	}
+	// Windows executables already have the right permissions
 
 	fmt.Println("Step 4/5: Downloading XMLUI test server...")
 	serverURL := getPlatformSpecificServerURL()
@@ -357,7 +348,12 @@ func main() {
 		fmt.Println("Failed to extract server:", err)
 		os.Exit(1)
 	}
-	_ = ensureExecutable(filepath.Join(appDir, "start.sh"))
+	// Set executable permission and remove quarantine for start.sh
+	startScriptPath := filepath.Join(appDir, "start.sh")
+	os.Chmod(startScriptPath, 0755)
+	if runtime.GOOS == "darwin" {
+		exec.Command("xattr", "-d", "com.apple.quarantine", startScriptPath).Run()
+	}
 
 	// The final bundle should contain only these files/directories:
 	// - xmlui-invoice/  (the invoice app)
@@ -380,7 +376,7 @@ func main() {
 		cleanupScript += "rm -f *.zip\n"
 		cleanupScript += "rm -f cleanup.sh\n"
 		os.WriteFile(filepath.Join(installDir, "cleanup.sh"), []byte(cleanupScript), 0755)
-		ensureExecutable(filepath.Join(installDir, "cleanup.sh"))
+		os.Chmod(filepath.Join(installDir, "cleanup.sh"), 0755)
 		fmt.Println("Note: Run ./cleanup.sh to remove the bundler executable and temporary files")
 	}
 
