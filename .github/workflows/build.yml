@@ -115,14 +115,6 @@ jobs:
           token: ${{ secrets.PAT_TOKEN }}
           path: xmlui-source
 
-      - name: Package XMLUI components
-        run: |
-          mkdir -p xmlui-components/docs/pages/components
-          mkdir -p xmlui-components/xmlui/src/components
-          cp -r xmlui-source/docs/pages/components/* xmlui-components/docs/pages/components/
-          cp -r xmlui-source/xmlui/src/components/* xmlui-components/xmlui/src/components/
-          (cd xmlui-components && zip -r ../xmlui-components.zip .)
-
       - name: Download bundle zips
         uses: actions/download-artifact@v4
         with:
